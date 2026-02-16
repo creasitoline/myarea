@@ -97,7 +97,7 @@
                         <div class="work-info" onclick="editWork(${i})">
                             <h4>${w.client}</h4>
                             <p>${w.note}</p>
-                            ${w.audio ? `<audio controls src="${w.audio}" style="width:100%; height:35px; margin-top:8px;"></audio>` : ''}
+                            ${w.audio ? `<audio controls controlsList="nodownload" src="${w.audio}" style="width:100%; height:35px; margin-top:8px;"></audio>` : ''}
                             <div class="work-meta">${w.date || '---'} • ${w.hours}h</div>
                         </div>
                         <div class="trash-btn" onclick="askDelete(${i}, 'work')">${trashSVG}</div>
@@ -236,7 +236,7 @@
             document.getElementById('workFields').style.display = isLink ? 'none' : 'block'; 
         };
         window.editLink = (index) => { hideAllMenus(); editIndex = index; const l = userData.myLinks[index]; document.getElementById('typeSelector').value = 'link'; toggleFields(); document.getElementById('siteName').value = l.title; document.getElementById('siteUrl').value = l.url; document.getElementById('siteCategory').value = l.category; document.getElementById('addModal').style.display = 'block'; };
-        window.editWork = (index) => { editIndex = index; const w = userData.myWork[index]; document.getElementById('typeSelector').value = 'lavoro'; toggleFields(); document.getElementById('workClient').value = w.client; document.getElementById('workNote').value = w.note; document.getElementById('workHours').value = w.hours; document.getElementById('workDate').value = w.date; audioBase64 = w.audio || null; document.getElementById('addModal').style.display = 'block'; };
+        window.editWork = (index) => { editIndex = index; const w = userData.myWork[index]; document.getElementById('typeSelector').value = 'lavoro'; toggleFields(); document.getElementById('workClient').value = w.client; document.getElementById('workNote').value = w.note; document.getElementById('workHours').value = w.hours; document.getElementById('workDate').value = w.date; audioBase64 = w.audio || null; document.getElementById('addModal').style.display = 'block'; if(audioBase64) { document.getElementById('audioStatus').innerText = "✅ Audio presente"; document.getElementById('audioStatus').style.color = "var(--success)"; } };
     </script>
 
     <style>
@@ -247,7 +247,6 @@
         .login-card img { width: 120px; margin-bottom: 20px; }
         .login-input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid #ddd; font-size: 16px; box-sizing: border-box; }
         
-        /* Stile specifico per visualizzare il testo descrittivo nei campi data vuoti */
         input[type="date"]:before { content: attr(placeholder); color: #aaa; margin-right: 0.5em; }
         input[type="date"]:focus:before, input[type="date"]:valid:before { content: ""; }
 
