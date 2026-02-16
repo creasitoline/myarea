@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>myArea - Digital Workspace</title>
     
-    <link rel="icon" type="image/png" href="icon.png">
-    <link rel="apple-touch-icon" href="icon.png">
-    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="icon.png?v=2">
+    <link rel="apple-touch-icon" href="icon.png?v=2">
+    <link rel="manifest" href="manifest.json?v=2">
+    
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
@@ -106,7 +107,6 @@
             } else {
                 grid.style.display = 'grid'; workContainer.style.display = 'none';
                 
-                // Logica dei filtri
                 let filtered = userData.myLinks;
                 if (currentTab === 'contatti') {
                     filtered = userData.myLinks.filter(l => l.category === 'contatti' || l.category === 'whatsapp');
