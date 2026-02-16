@@ -97,7 +97,7 @@
                         <div class="work-info" onclick="editWork(${i})">
                             <h4>${w.client}</h4>
                             <p>${w.note}</p>
-                            ${w.audio ? `<audio controls src="${w.audio}" style="width:100%; margin-top:8px;"></audio>` : ''}
+                            ${w.audio ? `<audio controls src="${w.audio}" style="width:100%; height:35px; margin-top:8px;"></audio>` : ''}
                             <div class="work-meta">${w.date || '---'} • ${w.hours}h</div>
                         </div>
                         <div class="trash-btn" onclick="askDelete(${i}, 'work')">${trashSVG}</div>
@@ -106,20 +106,34 @@
                 });
             } else {
                 grid.style.display = 'grid'; workContainer.style.display = 'none';
+                
                 let filtered = userData.myLinks;
                 if (currentTab === 'contatti') {
                     filtered = userData.myLinks.filter(l => l.category === 'contatti' || l.category === 'whatsapp');
                 } else if (currentTab !== 'tutti') {
                     filtered = userData.myLinks.filter(l => l.category === currentTab);
                 }
+                
                 filtered.forEach((l) => {
                     const idx = userData.myLinks.indexOf(l);
                     const div = document.createElement('div');
                     div.className = 'app-icon';
                     let icon = l.category === 'whatsapp' ? `<img src="${waIcon}">` : l.category === 'contatti' ? callIcon : `<img src="https://www.google.com/s2/favicons?sz=128&domain=${l.url}">`;
                     div.innerHTML = `<div class="context-menu" id="menu-${idx}"><div class="context-item" onclick="event.stopPropagation(); editLink(${idx})">${editSVG} Modifica</div><div class="context-item" style="color:var(--danger)" onclick="event.stopPropagation(); askDelete(${idx}, 'link')">${trashSVG} Elimina</div></div><div class="icon-box">${icon}</div><span class="app-name">${l.title}</span>`;
-                    div.onclick = () => { if(document.getElementById(`menu-${idx}`).style.display === 'flex') { hideAllMenus(); return; } if (l.url.startsWith('tel:')) window.location.href = l.url; else window.open(l.url, '_blank'); };
-                    div.onmousedown = div.ontouchstart = () => { pressTimer = setTimeout(() => { hideAllMenus(); document.getElementById(`menu-${idx}`).style.display = 'flex'; }, 700); };
+                    
+                    div.onclick = (e) => { 
+                        e.stopPropagation();
+                        if(document.getElementById(`menu-${idx}`).style.display === 'flex') { hideAllMenus(); return; } 
+                        if (l.url.startsWith('tel:')) window.location.href = l.url; 
+                        else window.open(l.url, '_blank'); 
+                    };
+
+                    div.onmousedown = div.ontouchstart = (e) => { 
+                        pressTimer = setTimeout(() => { 
+                            hideAllMenus(); 
+                            document.getElementById(`menu-${idx}`).style.display = 'flex'; 
+                        }, 700); 
+                    };
                     div.onmouseup = div.ontouchend = () => clearTimeout(pressTimer);
                     grid.appendChild(div);
                 });
@@ -134,7 +148,7 @@
                 if (contacts.length > 0) {
                     const c = contacts[0];
                     document.getElementById('siteName').value = c.name ? c.name[0] : '';
-                    document.getElementById('siteUrl').value = c.tel ? c.tel[0].replace(/\s+/g, '') : '';
+                    document.getElementById('siteUrl').value = c.tel ? c.tel[0].replace(/[^0-9+]/g, '') : '';
                     document.getElementById('siteCategory').value = 'contatti';
                 }
             } catch (err) { alert("Funzione disponibile solo su smartphone via HTTPS"); }
@@ -173,10 +187,12 @@
         window.saveData = async () => {
             const type = document.getElementById('typeSelector').value;
             if(type === 'link') {
-                const name = document.getElementById('siteName').value; let url = document.getElementById('siteUrl').value; const cat = document.getElementById('siteCategory').value;
+                const name = document.getElementById('siteName').value; 
+                let url = document.getElementById('siteUrl').value; 
+                const cat = document.getElementById('siteCategory').value;
                 if(name && url) {
-                    if(cat === 'whatsapp' && !url.startsWith('http')) url = 'https://wa.me/' + url.replace(/\D/g,'');
-                    if(cat === 'contatti' && !url.startsWith('tel:')) url = 'tel:' + url.replace(/\s/g, '');
+                    if(cat === 'whatsapp' && !url.startsWith('http')) url = 'https://wa.me/' + url.replace(/[^0-9]/g,'');
+                    if(cat === 'contatti' && !url.startsWith('tel:')) url = 'tel:' + url.replace(/[^0-9+]/g, '');
                     const item = { title: name, url: url, category: cat };
                     if(editIndex !== null) userData.myLinks[editIndex] = item; else userData.myLinks.push(item);
                 }
@@ -211,23 +227,7 @@
             render(); 
         };
         window.hideAllMenus = () => document.querySelectorAll('.context-menu').forEach(m => m.style.display = 'none');
-        
-        window.openAddModal = () => { 
-            editIndex = null; 
-            audioBase64 = null; 
-            // Reset campi Modulo
-            document.getElementById('siteName').value = '';
-            document.getElementById('siteUrl').value = '';
-            document.getElementById('workClient').value = '';
-            document.getElementById('workNote').value = '';
-            document.getElementById('workHours').value = '';
-            document.getElementById('workDate').value = '';
-            document.getElementById('siteCategory').value = 'tutti';
-            document.getElementById('audioStatus').innerText = "Nessun audio"; 
-            document.getElementById('audioStatus').style.color = "gray";
-            document.getElementById('addModal').style.display = 'block'; 
-        };
-
+        window.openAddModal = () => { editIndex = null; audioBase64 = null; document.getElementById('addModal').style.display = 'block'; document.getElementById('audioStatus').innerText = "Nessun audio"; };
         window.closeModal = () => document.getElementById('addModal').style.display = 'none';
         window.toggleFields = () => { 
             const isLink = document.getElementById('typeSelector').value === 'link'; 
@@ -241,28 +241,35 @@
     <style>
         :root { --primary: #007AFF; --bg: #f2f2f7; --work: #FF9500; --danger: #FF3B30; --success: #34C759; }
         body, html { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: var(--bg); height: 100%; overflow: hidden; }
+        
         #welcomeScreen { position: fixed; inset: 0; background: #007AFF; display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .login-card { background: white; padding: 40px 30px; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; }
         .login-card img { width: 120px; margin-bottom: 20px; }
         .login-input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid #ddd; font-size: 16px; box-sizing: border-box; }
+        
         #mainApp { display: none; height: 100%; flex-direction: column; }
         .header { background: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; }
         .header img { height: 35px; }
         .content { flex: 1; overflow-y: auto; padding: 15px 15px 140px 15px; }
+        
         .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
         .app-icon { display: flex; flex-direction: column; align-items: center; position: relative; }
         .icon-box { width: 60px; height: 60px; border-radius: 15px; background: white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
         .icon-box img, .icon-box svg { width: 35px; height: 35px; }
         .app-name { font-size: 11px; margin-top: 6px; color: #333; text-align: center; font-weight: 500; }
+
         .work-card { background: white; padding: 15px; border-radius: 18px; margin-bottom: 10px; border-left: 5px solid var(--work); display: flex; justify-content: space-between; align-items: center; }
         .work-info h4 { margin: 0; color: #333; }
         .work-info p { margin: 5px 0; font-size: 13px; color: #666; }
         .work-meta { font-size: 11px; color: #999; font-weight: bold; }
+        
         .tab-bar { position: fixed; bottom: 0; width: 100%; background: rgba(255,255,255,0.95); backdrop-filter: blur(15px); display: flex; padding: 10px 0 30px 0; border-top: 1px solid #ddd; justify-content: space-around; z-index: 1000; }
         .tab-item { display: flex; flex-direction: column; align-items: center; color: #8e8e93; font-size: 10px; flex: 1; }
         .tab-item.active { color: var(--primary); }
         .tab-item svg { width: 24px; height: 24px; fill: currentColor; margin-bottom: 4px; }
+
         .add-btn { position: fixed; bottom: 100px; right: 20px; width: 60px; height: 60px; background: var(--primary); color: white; border-radius: 50%; border: none; font-size: 35px; box-shadow: 0 5px 15px rgba(0,122,255,0.3); z-index: 999; }
+
         .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 25px; width: 85%; max-width: 320px; z-index: 2000; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
         .btn-action { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-weight: bold; width: 100%; margin-top: 10px; }
         .context-menu { position: absolute; top: -10px; background: white; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); display: none; z-index: 500; flex-direction: column; padding: 5px; }
@@ -308,13 +315,13 @@
                 <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
                 <span>Social</span>
             </div>
-            <div class="tab-item" onclick="changeTab('lavoro', this)">
-                <svg viewBox="0 0 24 24"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-8 0h-4V4h4v2z"/></svg>
-                <span>Lavoro</span>
-            </div>
             <div class="tab-item" onclick="changeTab('contatti', this)">
                 <svg viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
                 <span>Contatti</span>
+            </div>
+            <div class="tab-item" onclick="changeTab('lavoro', this)">
+                <svg viewBox="0 0 24 24"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-8 0h-4V4h4v2z"/></svg>
+                <span>Lavoro</span>
             </div>
         </div>
     </div>
@@ -329,11 +336,10 @@
             <input type="text" id="siteName" class="login-input" placeholder="Nome">
             <input type="text" id="siteUrl" class="login-input" placeholder="URL o Numero">
             <select id="siteCategory" class="login-input">
-                <option value="tutti">Preferiti</option>
-                <option value="social">Social Network</option>
                 <option value="web">Sito Web</option>
-                <option value="contatti">Chiamata</option>
+                <option value="social">Social Network</option>
                 <option value="whatsapp">WhatsApp</option>
+                <option value="contatti">Chiamata</option>
             </select>
         </div>
         <div id="workFields" style="display:none">
