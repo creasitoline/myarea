@@ -47,18 +47,13 @@
             await setDoc(docRef, userData);
         }
 
-        // --- FUNZIONE LOGIN CON PERSISTENZA FORZATA ---
         window.handleAuth = async () => {
             const email = document.getElementById('email').value;
             const pass = document.getElementById('passInput').value;
             try {
-                // Ordina a Firebase di ricordare la sessione in locale
                 await setPersistence(auth, browserLocalPersistence);
-                // Effettua il login
                 await signInWithEmailAndPassword(auth, email, pass);
-            } catch (e) { 
-                alert("Accesso fallito: controlla email e password."); 
-            }
+            } catch (e) { alert("Accesso fallito."); }
         };
 
         window.logout = () => signOut(auth);
@@ -116,13 +111,43 @@
             }
         };
 
+        // --- IMPORTA CONTATTI OTTIMIZZATO ---
+        window.importFromPhone = async () => {
+            const supported = ('contacts' in navigator && 'ContactsManager' in window);
+            if (!supported) {
+                alert("La tua rubrica non è accessibile. Se sei su iPhone usa Safari, su Android usa Chrome. Se sei dentro Google Sites, apri direttamente il link del dominio.");
+                return;
+            }
+
+            try {
+                const props = ['name', 'tel'];
+                const opts = { multiple: false };
+                const contacts = await navigator.contacts.select(props, opts);
+
+                if (contacts.length > 0) {
+                    const c = contacts[0];
+                    const rawName = c.name && c.name.length > 0 ? c.name[0] : "Senza Nome";
+                    const rawTel = c.tel && c.tel.length > 0 ? c.tel[0] : "";
+                    
+                    document.getElementById('siteName').value = rawName;
+                    // Pulisce il numero da spazi e caratteri speciali
+                    document.getElementById('siteUrl').value = rawTel.replace(/\s+/g, '');
+                    document.getElementById('siteCategory').value = 'contatti';
+                }
+            } catch (err) {
+                console.log("Selezione annullata o fallita");
+            }
+        };
+
         window.saveData = async () => {
             const type = document.getElementById('typeSelector').value;
             if(type === 'link') {
-                const name = document.getElementById('siteName').value; let url = document.getElementById('siteUrl').value; const cat = document.getElementById('siteCategory').value;
+                const name = document.getElementById('siteName').value; 
+                let url = document.getElementById('siteUrl').value; 
+                const cat = document.getElementById('siteCategory').value;
                 if(name && url) {
                     if(cat === 'whatsapp' && !url.startsWith('http')) url = 'https://wa.me/' + url.replace(/\D/g,'');
-                    if(cat === 'contatti' && !url.startsWith('tel:')) url = 'tel:' + url;
+                    if(cat === 'contatti' && !url.startsWith('tel:')) url = 'tel:' + url.replace(/\s/g, '');
                     const item = { title: name, url: url, category: cat };
                     if(editIndex !== null) userData.myLinks[editIndex] = item; else userData.myLinks.push(item);
                 }
@@ -145,30 +170,20 @@
 
         window.changeTab = (tab, el) => { currentTab = tab; document.querySelectorAll('.tab-item').forEach(i => i.classList.remove('active')); el.classList.add('active'); render(); };
         window.hideAllMenus = () => document.querySelectorAll('.context-menu').forEach(m => m.style.display = 'none');
-        
-        window.openAddModal = () => { 
-            editIndex = null; 
-            document.getElementById('modalTitle').innerText = "Nuovo Elemento"; 
-            document.getElementById('siteName').value = '';
-            document.getElementById('siteUrl').value = '';
-            document.getElementById('siteCategory').value = 'preferiti';
-            document.getElementById('workClient').value = '';
-            document.getElementById('workNote').value = '';
-            document.getElementById('workHours').value = '';
-            document.getElementById('workDate').value = '';
-            document.getElementById('typeSelector').value = 'link';
-            toggleFields();
-            document.getElementById('addModal').style.display = 'block'; 
-        };
-
+        window.openAddModal = () => { editIndex = null; document.getElementById('modalTitle').innerText = "Nuovo Elemento"; document.getElementById('addModal').style.display = 'block'; document.getElementById('siteName').value=''; document.getElementById('siteUrl').value=''; };
         window.closeModal = () => document.getElementById('addModal').style.display = 'none';
-        window.toggleFields = () => { const isLink = document.getElementById('typeSelector').value === 'link'; document.getElementById('linkFields').style.display = isLink ? 'block' : 'none'; document.getElementById('workFields').style.display = isLink ? 'none' : 'block'; };
+        window.toggleFields = () => { 
+            const isLink = document.getElementById('typeSelector').value === 'link'; 
+            document.getElementById('linkFields').style.display = isLink ? 'block' : 'none'; 
+            document.getElementById('workFields').style.display = isLink ? 'none' : 'block'; 
+            document.getElementById('btnImport').style.display = isLink ? 'block' : 'none';
+        };
         window.editLink = (index) => { hideAllMenus(); editIndex = index; const l = userData.myLinks[index]; document.getElementById('typeSelector').value = 'link'; toggleFields(); document.getElementById('siteName').value = l.title; document.getElementById('siteUrl').value = l.url; document.getElementById('siteCategory').value = l.category; document.getElementById('addModal').style.display = 'block'; };
         window.editWork = (index) => { editIndex = index; const w = userData.myWork[index]; document.getElementById('typeSelector').value = 'lavoro'; toggleFields(); document.getElementById('workClient').value = w.client; document.getElementById('workNote').value = w.note; document.getElementById('workHours').value = w.hours; document.getElementById('workDate').value = w.date; document.getElementById('addModal').style.display = 'block'; };
     </script>
 
     <style>
-        :root { --primary: #007AFF; --bg: #f2f2f7; --work: #FF9500; --danger: #FF3B30; }
+        :root { --primary: #007AFF; --bg: #f2f2f7; --work: #FF9500; --danger: #FF3B30; --success: #34C759; }
         body, html { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: var(--bg); height: 100%; overflow: hidden; user-select: none; }
         
         #welcomeScreen { position: fixed; inset: 0; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); display: flex; align-items: center; justify-content: center; z-index: 1000; }
@@ -203,6 +218,8 @@
         .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 25px; width: 85%; max-width: 320px; z-index: 2000; box-shadow: 0 0 100px rgba(0,0,0,0.5); }
         .modal input, .modal select { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid #ddd; box-sizing: border-box; }
         
+        .btn-import { background: #5856D6; color: white; border: none; padding: 12px; border-radius: 12px; font-size: 14px; font-weight: bold; margin-bottom: 10px; width: 100%; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+
         #deleteOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 3000; align-items: center; justify-content: center; }
         .del-card { background: white; padding: 30px; border-radius: 25px; text-align: center; width: 260px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
         .context-menu { position: absolute; top: -15px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); display: none; z-index: 500; flex-direction: column; padding: 5px; min-width: 110px; border: 1px solid #eee; }
@@ -217,7 +234,6 @@
             <input type="email" id="email" class="login-input" placeholder="Email">
             <input type="password" id="passInput" class="login-input" placeholder="Password">
             <button class="btn-action" onclick="handleAuth()">ACCEDI</button>
-            <p style="font-size: 12px; color: #fff; margin-top: 15px;">Area Riservata agli abbonati</p>
         </div>
     </div>
 
@@ -249,7 +265,9 @@
             <option value="link">Link / Social / Contatto</option>
             <option value="lavoro">Lavoro (Ore / Note)</option>
         </select>
+        
         <div id="linkFields">
+            <button id="btnImport" class="btn-import" onclick="importFromPhone()">👤 IMPORTA DA RUBRICA</button>
             <input type="text" id="siteName" placeholder="Nome">
             <input type="text" id="siteUrl" placeholder="URL o Numero">
             <select id="siteCategory">
@@ -260,12 +278,14 @@
                 <option value="whatsapp">WhatsApp</option>
             </select>
         </div>
+        
         <div id="workFields" style="display:none">
             <input type="text" id="workClient" placeholder="Cliente">
             <input type="text" id="workNote" placeholder="Note">
             <input type="number" id="workHours" placeholder="Ore">
             <input type="date" id="workDate">
         </div>
+        
         <button class="btn-action" onclick="saveData()">SALVA</button>
         <button onclick="closeModal()" style="background:none; border:none; color:gray; width:100%; margin-top:10px;">Annulla</button>
     </div>
