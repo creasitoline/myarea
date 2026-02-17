@@ -1,6 +1,6 @@
 {
-  "short_name": "myArea",
-  "name": "myArea Digital Workspace",
+  "short_name": "MyArea App", 
+  "name": "MyArea Workspace",
   "icons": [
     {
       "src": "icon-v2.png",
@@ -13,7 +13,7 @@
       "type": "image/png"
     }
   ],
-  "start_url": ".",
+  "start_url": "/?v=1",
   "display": "standalone",
   "theme_color": "#007AFF",
   "background_color": "#ffffff"
