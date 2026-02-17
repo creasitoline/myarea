@@ -84,7 +84,6 @@
             }
         });
 
-        // Nuova funzione Ricerca
         window.filterItems = (val) => {
             searchTerm = val.toLowerCase();
             render();
@@ -96,7 +95,6 @@
             const searchBar = document.getElementById('searchBarContainer');
             grid.innerHTML = ''; workContainer.innerHTML = '';
 
-            // Gestione barra ricerca
             searchBar.style.display = currentTab === 'cerca' ? 'block' : 'none';
 
             if(currentTab === 'lavoro') {
@@ -124,7 +122,6 @@
                     filtered = userData.myLinks.filter(l => l.category === currentTab);
                 }
                 
-                // Applica filtro ricerca se attivo
                 if (searchTerm !== "") {
                     filtered = filtered.filter(l => l.title.toLowerCase().includes(searchTerm));
                 }
@@ -143,7 +140,6 @@
             }
         };
 
-        // Gestione Menu a scomparsa
         window.toggleSheet = () => {
             document.getElementById('bottomSheet').classList.toggle('open');
             document.getElementById('sheetOverlay').classList.toggle('active');
@@ -153,7 +149,6 @@
             currentTab = tab; 
             document.querySelectorAll('.tab-item').forEach(i => i.classList.remove('active')); 
             if(el) el.classList.add('active'); 
-            // Chiudi tutto se non è il menu Altro
             if(tab !== 'altro') {
                 document.getElementById('bottomSheet').classList.remove('open');
                 document.getElementById('sheetOverlay').classList.remove('active');
@@ -274,11 +269,14 @@
         .login-card img { width: 120px; margin-bottom: 20px; }
         .login-input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid #ddd; font-size: 16px; box-sizing: border-box; }
         
+        /* Ripristino stile data calendario */
+        input[type="date"]:before { content: attr(placeholder); color: #aaa; margin-right: 0.5em; }
+        input[type="date"]:focus:before, input[type="date"]:valid:before { content: ""; }
+
         #mainApp { display: none; height: 100%; flex-direction: column; }
         .header { background: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; }
         .header img { height: 35px; }
 
-        /* Barra Ricerca */
         #searchBarContainer { padding: 10px 15px; background: white; border-bottom: 1px solid #eee; display: none; }
         .search-input { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid #ddd; background: #f2f2f7; font-size: 16px; box-sizing: border-box; }
 
@@ -296,14 +294,13 @@
         .work-meta { font-size: 11px; color: #999; font-weight: bold; }
         .custom-audio-player { width: 100%; height: 35px; margin-top: 8px; border-radius: 5px; background: #f1f3f4; }
 
-        /* Tab Bar e Bottom Sheet */
         .tab-bar { position: fixed; bottom: 0; width: 100%; background: rgba(255,255,255,0.95); backdrop-filter: blur(15px); display: flex; padding: 10px 0 30px 0; border-top: 1px solid #ddd; justify-content: space-around; z-index: 2000; }
         .tab-item { display: flex; flex-direction: column; align-items: center; color: #8e8e93; font-size: 10px; flex: 1; cursor: pointer; }
         .tab-item.active { color: var(--primary); }
         .tab-item svg { width: 24px; height: 24px; fill: currentColor; margin-bottom: 4px; }
         
         .bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); z-index: 1500; transform: translateY(100%); transition: transform 0.3s ease-out; }
-        .bottom-sheet.open { transform: translateY(-70px); } /* Si alza sopra la tab bar */
+        .bottom-sheet.open { transform: translateY(-70px); }
         .sheet-handle { width: 40px; height: 5px; background: #ddd; border-radius: 5px; margin: 12px auto; }
         .sheet-content { padding: 10px 20px 40px 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
         .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; z-index: 1400; }
@@ -405,7 +402,7 @@
             <input type="text" id="workClient" class="login-input" placeholder="Cliente">
             <input type="text" id="workNote" class="login-input" placeholder="Note">
             <input type="number" id="workHours" class="login-input" placeholder="Ore">
-            <input type="date" id="workDate" class="login-input" placeholder="Data" required>
+            <input type="date" id="workDate" class="login-input" placeholder="Data Calendario" required>
             <button id="recordBtn" class="btn-action" style="background:var(--success)" onclick="toggleRecording()">🎤 REGISTRA AUDIO</button>
             <div id="audioStatus" style="font-size:11px; text-align:center; margin-top:5px;">Nessun audio</div>
         </div>
