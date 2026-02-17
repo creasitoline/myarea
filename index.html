@@ -3,130 +3,139 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LAB: Scanner Multi-API</title>
+    <title>LAB: Scanner Prezzi REALI</title>
     
     <script src="https://unpkg.com/html5-qrcode"></script>
 
     <style>
-        :root { --primary: #007AFF; --bg: #f2f2f7; }
-        body { font-family: -apple-system, sans-serif; background: var(--bg); margin: 0; padding: 20px; text-align: center; }
+        :root { --primary: #007AFF; --bg: #f2f2f7; --success: #34C759; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); margin: 0; padding: 15px; text-align: center; }
         
-        #reader { width: 100%; max-width: 400px; margin: 0 auto; border-radius: 20px; overflow: hidden; background: black; }
+        #reader { width: 100%; max-width: 400px; margin: 0 auto; border-radius: 20px; overflow: hidden; background: black; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
         
         .product-card { 
             background: white; border-radius: 25px; padding: 20px; 
-            margin-top: 20px; display: none; box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            margin-top: 15px; display: none; box-shadow: 0 10px 30px rgba(0,0,0,0.1);
             text-align: left; animation: slideUp 0.4s ease-out;
         }
 
-        @keyframes slideUp { from { transform: translateY(50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
-        .product-img { width: 100%; height: 200px; object-fit: contain; border-radius: 15px; background: #fff; }
-        .product-title { font-size: 20px; font-weight: bold; margin: 15px 0 5px 0; color: #333; }
-        .product-brand { color: #8e8e93; font-size: 14px; margin-bottom: 15px; text-transform: uppercase; }
+        .product-img { width: 100px; height: 100px; object-fit: contain; float: left; margin-right: 15px; border-radius: 10px; background: #fff; }
+        .product-info { overflow: hidden; }
+        .product-title { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 5px; }
+        .product-brand { color: #8e8e93; font-size: 13px; text-transform: uppercase; margin-bottom: 10px; }
 
-        .price-comparison { border-top: 1px solid #eee; padding-top: 15px; margin-top: 15px; }
-        .price-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 15px; border-bottom: 1px solid #f9f9f9; }
-        .price-row.best { color: #34C759; font-weight: bold; }
-        
-        .btn-save { 
-            background: var(--primary); color: white; border: none; width: 100%; 
-            padding: 15px; border-radius: 12px; font-weight: bold; margin-top: 20px; font-size: 16px;
+        .real-price-box { 
+            clear: both; margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 15px; border: 1px dashed #ccc;
         }
 
-        #status { margin-top: 10px; font-size: 13px; color: #666; }
-        .loading-spinner { border: 3px solid #f3f3f3; border-top: 3px solid var(--primary); border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 10px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .btn-check-price {
+            background: var(--success); color: white; border: none; width: 100%; 
+            padding: 12px; border-radius: 10px; font-weight: bold; margin-top: 10px; cursor: pointer;
+        }
+
+        /* MODALE PER RISULTATI REALI */
+        #priceModal {
+            display: none; position: fixed; inset: 0; background: white; z-index: 1000;
+            flex-direction: column; animation: slideUp 0.3s;
+        }
+        .modal-header { padding: 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ddd; }
+        #priceFrame { flex: 1; border: none; width: 100%; }
+        
+        .btn-close { background: #eee; border: none; padding: 8px 15px; border-radius: 8px; font-weight: bold; }
+        #status { margin-top: 10px; font-size: 12px; color: #666; }
     </style>
 </head>
 <body>
 
-    <h2>ScanMe Lab 🧪</h2>
-    <p>Test della scheda prodotto Multi-API</p>
-
+    <h3>Scanner Real-Time 📦</h3>
+    
     <div id="reader"></div>
-    <div id="status">Inquadra un codice a barre...</div>
+    <div id="status">Pronto per la scansione...</div>
 
     <div id="productCard" class="product-card">
-        <img id="pImg" class="product-img" src="" alt="Prodotto">
-        <div id="pTitle" class="product-title">Caricamento...</div>
-        <div id="pBrand" class="product-brand">---</div>
-
-        <div class="price-comparison">
-            <div style="font-weight: bold; margin-bottom: 10px;">Confronto Prezzi Integrato:</div>
-            <div class="price-row">
-                <span>🛒 Amazon.it</span>
-                <span id="pAmazon">Cerca...</span>
-            </div>
-            <div class="price-row">
-                <span>📦 eBay</span>
-                <span id="pEbay">Cerca...</span>
-            </div>
-            <div class="price-row best">
-                <span>💎 Miglior Prezzo Web</span>
-                <span id="pWeb">Cerca...</span>
-            </div>
+        <img id="pImg" class="product-img" src="" alt="">
+        <div class="product-info">
+            <div id="pTitle" class="product-title">Caricamento...</div>
+            <div id="pBrand" class="product-brand">---</div>
         </div>
 
-        <button class="btn-save" onclick="location.reload()">NUOVA SCANSIONE</button>
+        <div class="real-price-box">
+            <div style="font-size: 14px; font-weight: bold; color: #555;">💰 Confronta Prezzi Reali:</div>
+            <p style="font-size: 12px; color: #777;">Clicca per cercare il prezzo più basso su Google Shopping e Amazon</p>
+            <button class="btn-check-price" id="searchBtn">VEDI PREZZI ONLINE</button>
+        </div>
+
+        <button class="btn-check-price" style="background:var(--primary); margin-top: 10px;" onclick="location.reload()">NUOVA SCANSIONE</button>
+    </div>
+
+    <div id="priceModal">
+        <div class="modal-header">
+            <span style="font-weight: bold;">Risultati dal Web</span>
+            <button class="btn-close" onclick="closePrices()">CHIUDI</button>
+        </div>
+        <iframe id="priceFrame" src=""></iframe>
     </div>
 
     <script>
         let html5QrCode = new Html5Qrcode("reader");
 
-        // 1. FUNZIONE PRINCIPALE: CERCA DATI SU PIÙ PORTALI
-        async function fetchAggregatedData(barcode) {
-            document.getElementById('status').innerHTML = '<div class="loading-spinner"></div> Ricerca su più database...';
+        async function fetchRealData(barcode) {
+            document.getElementById('status').innerText = "Ricerca in corso...";
             
             try {
-                // Chiamata 1: Open Food Facts (Gratuita per Nome/Foto)
-                const offResponse = await fetch(`https://it.openfoodfacts.org/api/v0/product/${barcode}.json`);
-                const offData = await offResponse.json();
+                // 1. API Open Food Facts per Nome e Foto (Reali)
+                const response = await fetch(`https://it.openfoodfacts.org/api/v0/product/${barcode}.json`);
+                const data = await response.json();
 
-                if (offData.status === 1) {
-                    const p = offData.product;
-                    updateUI(p.product_name, p.brands, p.image_url, barcode);
-                    
-                    // Chiamata 2: Simulo integrazione prezzi (Amazon/Google)
-                    // In un'app reale qui useresti SerpApi o simili.
-                    simulatePriceSearch(p.product_name);
+                if (data.status === 1) {
+                    const p = data.product;
+                    showUI(p.product_name, p.brands, p.image_url, barcode);
                 } else {
-                    alert("Prodotto non trovato. Prova con un altro codice.");
-                    startScanner();
+                    // Se non è cibo, proviamo una ricerca generica
+                    showUI("Prodotto Generico", "Barcode: " + barcode, "https://via.placeholder.com/100?text=Scan", barcode);
                 }
             } catch (err) {
-                console.error("Errore API:", err);
+                console.error(err);
+                document.getElementById('status').innerText = "Errore connessione.";
             }
         }
 
-        // 2. AGGIORNA INTERFACCIA
-        function updateUI(name, brand, img, code) {
+        function showUI(name, brand, img, code) {
             document.getElementById('productCard').style.display = 'block';
-            document.getElementById('pTitle').innerText = name || "Prodotto Sconosciuto";
-            document.getElementById('pBrand').innerText = brand || "Marca generica";
-            document.getElementById('pImg').src = img || "https://via.placeholder.com/200?text=No+Photo";
-            document.getElementById('status').innerText = "Codice: " + code;
+            document.getElementById('pTitle').innerText = name || "Sconosciuto";
+            document.getElementById('pBrand').innerText = brand || "Marca non rilevata";
+            document.getElementById('pImg').src = img || "https://via.placeholder.com/100?text=No+Photo";
+            document.getElementById('status').innerText = "Codice rilevato: " + code;
+
+            // Configura il bottone per la ricerca REALE
+            document.getElementById('searchBtn').onclick = () => {
+                openPrices(name + " " + (brand || ""));
+            };
         }
 
-        // 3. SIMULAZIONE AGGREGATORE PREZZI (Professionalizzazione)
-        function simulatePriceSearch(query) {
-            // Qui simuliamo che l'app stia andando su Amazon ed eBay
-            setTimeout(() => {
-                const basePrice = (Math.random() * (15 - 5) + 5).toFixed(2);
-                document.getElementById('pAmazon').innerText = "€ " + (parseFloat(basePrice) + 1.20).toFixed(2);
-                document.getElementById('pEbay').innerText = "€ " + (parseFloat(basePrice) + 0.50).toFixed(2);
-                document.getElementById('pWeb').innerText = "€ " + basePrice;
-            }, 1200);
-        }
-
-        // 4. GESTIONE SCANNER
-        function startScanner() {
-            const config = { fps: 15, qrbox: { width: 280, height: 150 } }; // Formato rettangolare per codici a barre
+        function openPrices(query) {
+            const modal = document.getElementById('priceModal');
+            const frame = document.getElementById('priceFrame');
+            // Usiamo Google Shopping come aggregatore reale
+            const searchUrl = `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(query)}`;
             
+            frame.src = searchUrl;
+            modal.style.display = 'flex';
+        }
+
+        function closePrices() {
+            document.getElementById('priceModal').style.display = 'none';
+            document.getElementById('priceFrame').src = "";
+        }
+
+        function startScanner() {
+            const config = { fps: 15, qrbox: { width: 250, height: 150 } };
             html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => {
                 html5QrCode.stop();
                 if (navigator.vibrate) navigator.vibrate(100);
-                fetchAggregatedData(decodedText);
+                fetchRealData(decodedText);
             });
         }
 
