@@ -33,17 +33,17 @@
         const db = getFirestore(app);
 
         let currentUser = null;
-        let userData = { myLinks: [], myWork: [] };
+        let userData = { myLinks: [], myWork: [], myGrocery: [] }; // Inizializzato con Spesa
         let currentTab = 'tutti';
         let editIndex = null;
         let pressTimer;
         let searchTerm = "";
-        
-        // Scanner Variables
         let html5QrCode = null;
-        let mySavedDocs = JSON.parse(localStorage.getItem('myAreaDocs')) || [];
+        
+        let mediaRecorder;
+        let audioChunks = [];
+        let audioBase64 = null;
 
-        // Assets
         const waIcon = "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg";
         const callIcon = `<svg viewBox="0 0 24 24" fill="#007AFF"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>`;
         const trashSVG = `<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>`;
@@ -52,8 +52,13 @@
         async function loadData(uid) {
             const docRef = doc(db, "users", uid);
             const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) userData = docSnap.data();
-            else { userData = { myLinks: [], myWork: [] }; await setDoc(docRef, userData); }
+            if (docSnap.exists()) {
+                userData = docSnap.data();
+                if (!userData.myGrocery) userData.myGrocery = []; 
+            } else { 
+                userData = { myLinks: [], myWork: [], myGrocery: [] }; 
+                await setDoc(docRef, userData); 
+            }
             render();
         }
 
@@ -87,268 +92,389 @@
             }
         });
 
-        // Integrazione Funzioni Scanner nel flusso App
-        window.initScanner = async () => {
-            if(!html5QrCode) html5QrCode = new Html5Qrcode("reader");
+        window.filterItems = (val) => {
+            searchTerm = val.toLowerCase();
+            render();
+        };
+
+        // --- GESTIONE SCANNER ---
+        window.startScan = async () => {
+            toggleSheet(); // Chiude il menu Altro
+            document.getElementById('scannerOverlay').style.display = 'flex';
+            html5QrCode = new Html5Qrcode("reader");
+            const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+            
             try {
-                await html5QrCode.start({ facingMode: "environment" }, { fps: 15, qrbox: 250 }, onScanSuccess);
+                await html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => {
+                    stopScan();
+                    openGroceryPreview(decodedText);
+                });
             } catch (err) {
-                console.error("Errore camera", err);
+                alert("Errore fotocamera: " + err);
+                stopScan();
             }
         };
 
-        async function onScanSuccess(decodedText) {
-            await html5QrCode.stop();
-            document.getElementById('scanStatus').innerText = "Identificazione...";
-            try {
-                const response = await fetch(`https://it.openfoodfacts.org/api/v0/product/${decodedText}.json`);
-                const data = await response.json();
-                let p = { 
-                    name: "Prodotto Generico", 
-                    brand: "Codice: " + decodedText, 
-                    img: "https://via.placeholder.com/100?text=📦",
-                    barcode: decodedText 
-                };
-                if (data.status === 1) {
-                    p.name = data.product.product_name || p.name;
-                    p.brand = data.product.brands || p.brand;
-                    p.img = data.product.image_url || p.img;
+        window.stopScan = () => {
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    document.getElementById('scannerOverlay').style.display = 'none';
+                });
+            } else {
+                document.getElementById('scannerOverlay').style.display = 'none';
+            }
+        };
+
+        window.openGroceryPreview = (code) => {
+            document.getElementById('groceryTitle').value = "Prodotto " + code;
+            document.getElementById('groceryDesc').value = "Scansionato tramite ScanMe";
+            document.getElementById('groceryPrice').value = "";
+            document.getElementById('groceryPreviewModal').style.display = 'block';
+        };
+
+        window.saveGrocery = async () => {
+            const title = document.getElementById('groceryTitle').value;
+            const desc = document.getElementById('groceryDesc').value;
+            const price = document.getElementById('groceryPrice').value;
+
+            if (title) {
+                userData.myGrocery.unshift({ title, desc, price, date: new Date().toLocaleDateString() });
+                await syncCloud();
+                document.getElementById('groceryPreviewModal').style.display = 'none';
+                changeTab('spesa');
+            }
+        };
+
+        window.render = () => {
+            const grid = document.getElementById('appGrid');
+            const workContainer = document.getElementById('workContainer');
+            const searchBar = document.getElementById('searchBarContainer');
+            grid.innerHTML = ''; workContainer.innerHTML = '';
+
+            searchBar.style.display = currentTab === 'cerca' ? 'block' : 'none';
+
+            if(currentTab === 'lavoro' || currentTab === 'spesa') {
+                grid.style.display = 'none'; workContainer.style.display = 'block';
+                const items = currentTab === 'lavoro' ? userData.myWork : userData.myGrocery;
+                
+                items.forEach((item, i) => {
+                    const div = document.createElement('div');
+                    div.className = 'work-card';
+                    div.style.borderLeftColor = currentTab === 'spesa' ? 'var(--success)' : 'var(--work)';
+                    div.innerHTML = `
+                        <div class="work-info">
+                            <h4>${item.client || item.title}</h4>
+                            <p>${item.note || item.desc}</p>
+                            ${item.audio ? `<audio controls src="${item.audio}" class="custom-audio-player"></audio>` : ''}
+                            <div class="work-meta">${item.date || '---'} ${item.hours ? '• '+item.hours+'h' : ''} ${item.price ? '• €'+item.price : ''}</div>
+                        </div>
+                        <div class="trash-btn" onclick="askDelete(${i}, '${currentTab}')">${trashSVG}</div>
+                    `;
+                    workContainer.appendChild(div);
+                });
+            } else {
+                grid.style.display = 'grid'; workContainer.style.display = 'none';
+                let filtered = userData.myLinks;
+                if (currentTab === 'contatti') {
+                    filtered = userData.myLinks.filter(l => l.category === 'contatti' || l.category === 'whatsapp');
+                } else if (currentTab !== 'tutti' && currentTab !== 'cerca') {
+                    filtered = userData.myLinks.filter(l => l.category === currentTab);
                 }
-                showProduct(p);
-            } catch (e) { alert("Errore connessione"); window.initScanner(); }
-        }
-
-        function showProduct(p) {
-            document.getElementById('productCard').style.display = 'block';
-            document.getElementById('resTitle').innerText = p.name;
-            document.getElementById('resBrand').innerText = p.brand;
-            document.getElementById('resImg').src = p.img;
-            
-            const query = encodeURIComponent(p.name + " " + p.brand);
-            document.getElementById('linkAmz').onclick = () => window.open(`https://www.amazon.it/s?k=${query}`, '_blank');
-            document.getElementById('linkGgl').onclick = () => window.open(`https://www.google.com/search?tbm=shop&q=${query}`, '_blank');
-            
-            window.currentScan = p;
-        }
-
-        window.saveToDocs = () => {
-            const price = document.getElementById('userPrice').value;
-            const shop = document.getElementById('userShop').value;
-            if(!price || !shop) { alert("Inserisci prezzo e negozio!"); return; }
-
-            const newDoc = { ...window.currentScan, userPrice: price, userShop: shop, date: new Date().toLocaleDateString() };
-            mySavedDocs.unshift(newDoc);
-            localStorage.setItem('myAreaDocs', JSON.stringify(mySavedDocs));
-            
-            document.getElementById('productCard').style.display = 'none';
-            document.getElementById('userPrice').value = "";
-            document.getElementById('userShop').value = "";
-            renderShoppingList();
-            window.initScanner();
-        };
-
-        window.deleteDoc = (index) => {
-            mySavedDocs.splice(index, 1);
-            localStorage.setItem('myAreaDocs', JSON.stringify(mySavedDocs));
-            renderShoppingList();
-        };
-
-        function renderShoppingList() {
-            const list = document.getElementById('docsList');
-            if(mySavedDocs.length === 0) {
-                list.innerHTML = '<p style="color: gray; font-size: 13px; text-align:center;">Nessuna spesa salvata.</p>';
-                return;
+                
+                if (searchTerm !== "") {
+                    filtered = filtered.filter(l => l.title.toLowerCase().includes(searchTerm));
+                }
+                
+                filtered.forEach((l) => {
+                    const idx = userData.myLinks.indexOf(l);
+                    const div = document.createElement('div');
+                    div.className = 'app-icon';
+                    let icon = l.category === 'whatsapp' ? `<img src="${waIcon}">` : l.category === 'contatti' ? callIcon : `<img src="https://www.google.com/s2/favicons?sz=128&domain=${l.url}">`;
+                    div.innerHTML = `<div class="context-menu" id="menu-${idx}"><div class="context-item" onclick="event.stopPropagation(); editLink(${idx})">${editSVG} Modifica</div><div class="context-item" style="color:var(--danger)" onclick="event.stopPropagation(); askDelete(${idx}, 'link')">${trashSVG} Elimina</div></div><div class="icon-box">${icon}</div><span class="app-name">${l.title}</span>`;
+                    div.onclick = () => { if(document.getElementById(`menu-${idx}`).style.display === 'flex') { hideAllMenus(); return; } if (l.url.startsWith('tel:')) window.location.href = l.url; else window.open(l.url, '_blank'); };
+                    div.onmousedown = div.ontouchstart = () => { pressTimer = setTimeout(() => { hideAllMenus(); document.getElementById(`menu-${idx}`).style.display = 'flex'; }, 700); };
+                    div.onmouseup = div.ontouchend = () => clearTimeout(pressTimer);
+                    grid.appendChild(div);
+                });
             }
-            list.innerHTML = mySavedDocs.map((d, index) => `
-                <div class="doc-item">
-                    <img src="${d.img}" width="40">
-                    <div style="flex:1; margin-left:10px">
-                        <b style="font-size:13px">${d.name}</b><br>
-                        <small>${d.userShop} • ${d.date}</small>
-                    </div>
-                    <div style="color:var(--success); font-weight:bold">€${parseFloat(d.userPrice).toFixed(2)}</div>
-                    <div onclick="deleteDoc(${index})" style="margin-left:10px; color:var(--danger)">×</div>
-                </div>
-            `).join('');
-        }
+        };
+
+        window.toggleSheet = () => {
+            document.getElementById('bottomSheet').classList.toggle('open');
+            document.getElementById('sheetOverlay').classList.toggle('active');
+        };
 
         window.changeTab = (tab, el) => { 
             currentTab = tab; 
             document.querySelectorAll('.tab-item').forEach(i => i.classList.remove('active')); 
             if(el) el.classList.add('active'); 
             
-            // Ferma lo scanner se cambi tab
-            if(html5QrCode && tab !== 'shopping') {
-                html5QrCode.stop().catch(() => {});
-            }
-
-            if(tab === 'shopping') {
-                window.initScanner();
-                renderShoppingList();
-            }
-
+            // Chiude il menu se clicco un'icona interna o cambio sezione
             document.getElementById('bottomSheet').classList.remove('open');
             document.getElementById('sheetOverlay').classList.remove('active');
             render(); 
         };
 
-        window.render = () => {
-            const grid = document.getElementById('appGrid');
-            const workContainer = document.getElementById('workContainer');
-            const shoppingContainer = document.getElementById('shoppingContainer');
-            const searchBar = document.getElementById('searchBarContainer');
-            
-            grid.style.display = 'none'; 
-            workContainer.style.display = 'none'; 
-            shoppingContainer.style.display = 'none';
-            searchBar.style.display = 'none';
-
-            if(currentTab === 'lavoro') {
-                workContainer.style.display = 'block';
-                // ... (tua logica lavoro esistente)
-            } else if(currentTab === 'shopping') {
-                shoppingContainer.style.display = 'block';
+        window.toggleRecording = async () => {
+            const btn = document.getElementById('recordBtn');
+            const status = document.getElementById('audioStatus');
+            if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+                    mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const reader = new FileReader();
+                        reader.readAsDataURL(audioBlob);
+                        reader.onloadend = () => {
+                            audioBase64 = reader.result;
+                            status.innerText = "✅ Audio pronto";
+                            status.style.color = "var(--success)";
+                        };
+                    };
+                    mediaRecorder.start();
+                    btn.innerText = "🛑 FERMA";
+                    btn.style.background = "var(--danger)";
+                } catch (err) { alert("Attiva il microfono."); }
             } else {
-                grid.style.display = 'grid';
-                searchBar.style.display = currentTab === 'cerca' ? 'block' : 'none';
-                // ... (tua logica link esistente)
+                mediaRecorder.stop();
+                btn.innerText = "🎤 REGISTRA";
+                btn.style.background = "var(--primary)";
             }
         };
 
-        // Funzioni UI
-        window.toggleSheet = () => {
-            document.getElementById('bottomSheet').classList.toggle('open');
-            document.getElementById('sheetOverlay').classList.toggle('active');
+        window.saveData = async () => {
+            const type = document.getElementById('typeSelector').value;
+            if(type === 'link') {
+                const name = document.getElementById('siteName').value; let url = document.getElementById('siteUrl').value; const cat = document.getElementById('siteCategory').value;
+                if(name && url) {
+                    if(cat === 'whatsapp' && !url.startsWith('http')) url = 'https://wa.me/' + url.replace(/\D/g,'');
+                    if(cat === 'contatti' && !url.startsWith('tel:')) url = 'tel:' + url.replace(/\s/g, '');
+                    const item = { title: name, url: url, category: cat };
+                    if(editIndex !== null) userData.myLinks[editIndex] = item; else userData.myLinks.push(item);
+                }
+            } else {
+                const work = { 
+                    client: document.getElementById('workClient').value, 
+                    note: document.getElementById('workNote').value, 
+                    hours: document.getElementById('workHours').value, 
+                    date: document.getElementById('workDate').value,
+                    audio: audioBase64
+                };
+                if(work.client) { if(editIndex !== null) userData.myWork[editIndex] = work; else userData.myWork.unshift(work); }
+            }
+            audioBase64 = null;
+            closeModal(); render(); await syncCloud();
+        };
+
+        window.askDelete = (index, type) => {
+            event.stopPropagation(); hideAllMenus();
+            document.getElementById('deleteOverlay').style.display = 'flex';
+            document.getElementById('confirmDelete').onclick = async () => {
+                if(type === 'work') userData.myWork.splice(index, 1); 
+                else if(type === 'spesa') userData.myGrocery.splice(index, 1);
+                else userData.myLinks.splice(index, 1);
+                
+                document.getElementById('deleteOverlay').style.display = 'none';
+                render(); await syncCloud();
+            };
+        };
+
+        window.hideAllMenus = () => document.querySelectorAll('.context-menu').forEach(m => m.style.display = 'none');
+        
+        window.openAddModal = () => { 
+            editIndex = null; 
+            audioBase64 = null; 
+            document.getElementById('siteName').value = '';
+            document.getElementById('siteUrl').value = '';
+            document.getElementById('workClient').value = '';
+            document.getElementById('workNote').value = '';
+            document.getElementById('addModal').style.display = 'block'; 
+            document.getElementById('audioStatus').innerText = "Nessun audio";
+        };
+
+        window.closeModal = () => document.getElementById('addModal').style.display = 'none';
+        window.toggleFields = () => { 
+            const isLink = document.getElementById('typeSelector').value === 'link'; 
+            document.getElementById('linkFields').style.display = isLink ? 'block' : 'none'; 
+            document.getElementById('workFields').style.display = isLink ? 'none' : 'block'; 
         };
         
-        window.openAddModal = () => document.getElementById('addModal').style.display = 'block';
-        window.closeModal = () => document.getElementById('addModal').style.display = 'none';
-        
+        window.editLink = (index) => { hideAllMenus(); editIndex = index; const l = userData.myLinks[index]; document.getElementById('typeSelector').value = 'link'; toggleFields(); document.getElementById('siteName').value = l.title; document.getElementById('siteUrl').value = l.url; document.getElementById('siteCategory').value = l.category; document.getElementById('addModal').style.display = 'block'; };
     </script>
 
     <style>
-        :root { --primary: #007AFF; --bg: #f2f2f7; --work: #FF9500; --danger: #FF3B30; --success: #34C759; }
+        :root { --primary: #007AFF; --bg: #f2f2f7; --work: #FF9500; --danger: #FF3B30; --success: #34C759; --social: #5856D6; }
         body, html { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: var(--bg); height: 100%; overflow: hidden; }
+        #welcomeScreen { position: fixed; inset: 0; background: #007AFF; display: flex; align-items: center; justify-content: center; z-index: 5000; }
+        .login-card { background: white; padding: 40px 30px; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; }
+        .login-card img { width: 120px; margin-bottom: 20px; }
+        .login-input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid #ddd; font-size: 16px; box-sizing: border-box; }
         
         #mainApp { display: none; height: 100%; flex-direction: column; }
-        .header { background: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; z-index: 10; }
-        .header img { height: 30px; }
+        .header { background: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; }
+        .header img { height: 35px; }
 
-        .content { flex: 1; overflow-y: auto; padding: 15px; padding-bottom: 120px; }
-        
-        /* Stili Scanner Integrati */
-        #reader { width: 100%; border-radius: 15px; overflow: hidden; background: #000; }
-        .card-scan { background: white; border-radius: 15px; padding: 15px; margin-top: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-        .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-        .btn-shop { padding: 8px; border: none; border-radius: 8px; color: white; font-weight: bold; font-size: 12px; }
-        
-        .doc-item { background: white; padding: 10px; border-radius: 12px; margin-bottom: 8px; display: flex; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.03); }
+        #searchBarContainer { padding: 10px 15px; background: white; border-bottom: 1px solid #eee; display: none; }
+        .search-input { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid #ddd; background: #f2f2f7; font-size: 16px; box-sizing: border-box; }
 
-        /* Navigation */
-        .tab-bar { position: fixed; bottom: 0; width: 100%; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); display: flex; padding: 10px 0 25px; border-top: 1px solid #ddd; z-index: 1000; }
-        .tab-item { flex: 1; text-align: center; color: #8e8e93; font-size: 10px; }
-        .tab-item.active { color: var(--primary); }
-        .tab-item svg { width: 22px; height: 22px; margin-bottom: 2px; }
-
-        /* Altri stili esistenti della tua app... */
+        .content { flex: 1; overflow-y: auto; padding: 15px 15px 140px 15px; }
         .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
-        .add-btn { position: fixed; bottom: 90px; right: 20px; width: 55px; height: 55px; background: var(--primary); color: white; border-radius: 50%; border: none; font-size: 30px; z-index: 99; }
+        .app-icon { display: flex; flex-direction: column; align-items: center; position: relative; }
+        .icon-box { width: 60px; height: 60px; border-radius: 15px; background: white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        .icon-box img, .icon-box svg { width: 35px; height: 35px; }
+        .app-name { font-size: 11px; margin-top: 6px; color: #333; text-align: center; font-weight: 500; }
         
-        #welcomeScreen { position: fixed; inset: 0; background: var(--primary); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-        .login-card { background: white; padding: 30px; border-radius: 20px; width: 80%; text-align: center; }
-        .login-input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid #ddd; box-sizing: border-box; }
+        .work-card { background: white; padding: 15px; border-radius: 18px; margin-bottom: 10px; border-left: 5px solid var(--work); display: flex; justify-content: space-between; align-items: center; }
+        .work-info { flex: 1; }
+        .work-info h4 { margin: 0; color: #333; }
+        .work-info p { margin: 5px 0; font-size: 13px; color: #666; }
+        .work-meta { font-size: 11px; color: #999; font-weight: bold; }
+
+        .tab-bar { position: fixed; bottom: 0; width: 100%; background: rgba(255,255,255,0.95); backdrop-filter: blur(15px); display: flex; padding: 10px 0 30px 0; border-top: 1px solid #ddd; justify-content: space-around; z-index: 2000; }
+        .tab-item { display: flex; flex-direction: column; align-items: center; color: #8e8e93; font-size: 10px; flex: 1; cursor: pointer; }
+        .tab-item.active { color: var(--primary); }
+        .tab-item svg { width: 24px; height: 24px; fill: currentColor; margin-bottom: 4px; }
+        
+        .bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); z-index: 1500; transform: translateY(100%); transition: transform 0.3s ease-out; }
+        .bottom-sheet.open { transform: translateY(-70px); }
+        .sheet-handle { width: 40px; height: 5px; background: #ddd; border-radius: 5px; margin: 12px auto; }
+        .sheet-content { padding: 10px 20px 40px 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; max-height: 60vh; overflow-y: auto; }
+        .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; z-index: 1400; }
+        .sheet-overlay.active { display: block; }
+
+        .add-btn { position: fixed; bottom: 100px; right: 20px; width: 60px; height: 60px; background: var(--primary); color: white; border-radius: 50%; border: none; font-size: 35px; box-shadow: 0 5px 15px rgba(0,122,255,0.3); z-index: 999; }
+        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 25px; width: 85%; max-width: 320px; z-index: 4000; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        
+        /* Scanner Styles */
+        #scannerOverlay { display: none; position: fixed; inset: 0; background: black; z-index: 4500; flex-direction: column; }
+        #reader { width: 100%; height: 80%; }
+        .btn-action { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-weight: bold; width: 100%; margin-top: 10px; }
+        .context-menu { position: absolute; top: -10px; background: white; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); display: none; z-index: 500; flex-direction: column; padding: 5px; }
+        #deleteOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 4000; align-items: center; justify-content: center; }
+        .trash-btn svg { width: 20px; fill: var(--danger); }
     </style>
 </head>
-<body>
+<body onclick="hideAllMenus()">
 
     <div id="welcomeScreen">
         <div class="login-card">
-            <h2>myArea</h2>
+            <img src="logo.png" alt="myArea">
             <input type="email" id="email" class="login-input" placeholder="Email">
             <input type="password" id="passInput" class="login-input" placeholder="Password">
-            <button onclick="handleAuth()" style="width:100%; padding:12px; background:var(--primary); color:white; border:none; border-radius:10px; font-weight:bold;">ACCEDI</button>
+            <button class="btn-action" onclick="handleAuth()">ACCEDI</button>
         </div>
     </div>
 
     <div id="mainApp">
         <div class="header">
-            <span style="font-weight: bold; color: var(--primary);">myArea</span>
-            <div onclick="logout()" style="color:var(--danger); font-size:12px;">Esci</div>
+            <img src="logo.png" alt="myArea">
+            <div onclick="logout()" style="color:var(--danger); font-size:14px; font-weight:bold">Esci</div>
         </div>
 
-        <div id="searchBarContainer" style="padding:10px; display:none;">
-            <input type="text" placeholder="Cerca..." style="width:100%; padding:8px; border-radius:8px; border:1px solid #ddd;">
+        <div id="searchBarContainer">
+            <input type="text" class="search-input" placeholder="Cerca tra i tuoi link..." oninput="filterItems(this.value)">
         </div>
 
         <div class="content">
-            <div id="appGrid" class="grid"></div>
-
-            <div id="workContainer" style="display:none;"></div>
-
-            <div id="shoppingContainer" style="display:none;">
-                <h3 style="text-align:center; margin-top:0;">ScanMe Shopping</h3>
-                <div id="reader"></div>
-                <div id="scanStatus" style="text-align:center; font-size:12px; color:gray; margin:10px;">Inquadra un codice a barre</div>
-
-                <div id="productCard" class="card-scan" style="display:none;">
-                    <div style="display:flex; gap:10px; align-items:center;">
-                        <img id="resImg" src="" style="width:60px; height:60px; object-fit:contain;">
-                        <div>
-                            <b id="resTitle" style="font-size:14px;">Nome</b><br>
-                            <small id="resBrand">Marca</small>
-                        </div>
-                    </div>
-                    <div class="shop-grid">
-                        <button class="btn-shop" id="linkAmz" style="background:#FF9900;">Amazon</button>
-                        <button class="btn-shop" id="linkGgl" style="background:#4285F4;">Google</button>
-                    </div>
-                    <div style="margin-top:15px; border-top:1px solid #eee; padding-top:10px;">
-                        <input type="number" id="userPrice" placeholder="Prezzo €" style="width:45%; padding:8px; border-radius:8px; border:1px solid #ddd;">
-                        <input type="text" id="userShop" placeholder="Negozio" style="width:45%; padding:8px; border-radius:8px; border:1px solid #ddd;">
-                        <button onclick="saveToDocs()" style="width:100%; margin-top:10px; padding:10px; background:var(--primary); color:white; border:none; border-radius:8px;">SALVA SPESA</button>
-                    </div>
-                </div>
-
-                <h4 style="margin-top:25px;">Ultime spese</h4>
-                <div id="docsList"></div>
-            </div>
+            <div class="grid" id="appGrid"></div>
+            <div id="workContainer" style="display:none"></div>
         </div>
 
         <button class="add-btn" onclick="openAddModal()">+</button>
 
+        <div id="sheetOverlay" class="sheet-overlay" onclick="toggleSheet()"></div>
+        <div id="bottomSheet" class="bottom-sheet">
+            <div class="sheet-handle"></div>
+            <div class="sheet-content">
+                <div class="tab-item" onclick="changeTab('lavoro', this)">
+                    <div class="icon-box" style="background:#FFF0D1"><svg viewBox="0 0 24 24" fill="var(--work)"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-8 0h-4V4h4v2z"/></svg></div>
+                    <span class="app-name">Lavoro</span>
+                </div>
+                <div class="tab-item" onclick="changeTab('spesa', this)">
+                    <div class="icon-box" style="background:#E3F9E5"><svg viewBox="0 0 24 24" fill="var(--success)"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg></div>
+                    <span class="app-name">Mia Spesa</span>
+                </div>
+                <div class="tab-item" onclick="startScan()">
+                    <div class="icon-box" style="background:#E5E5EA"><svg viewBox="0 0 24 24" fill="#333"><path d="M3 5v6h2V7h4V5H3zm18 0h-6v2h4v4h2V5zM3 19h6v-2H5v-4H3v6zm18 0v-6h-2v4h-4v2h6zM7 9h10v6H7V9z"/></svg></div>
+                    <span class="app-name">ScanMe</span>
+                </div>
+            </div>
+        </div>
+
         <div class="tab-bar">
             <div class="tab-item active" onclick="changeTab('tutti', this)">
-                <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-                <div>Home</div>
+                <svg viewBox="0 0 24 24"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/></svg>
+                <span>Tutti</span>
             </div>
-            <div class="tab-item" onclick="changeTab('shopping', this)">
-                <svg viewBox="0 0 24 24"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
-                <div>Spesa</div>
+            <div class="tab-item" onclick="changeTab('web', this)">
+                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                <span>Web</span>
+            </div>
+            <div class="tab-item" onclick="changeTab('social', this)">
+                <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+                <span>Social</span>
+            </div>
+            <div class="tab-item" onclick="changeTab('contatti', this)">
+                <svg viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                <span>Contatti</span>
             </div>
             <div class="tab-item" onclick="toggleSheet()">
-                <svg viewBox="0 0 24 24"><path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
-                <div>Altro</div>
+                <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+                <span>Altro</span>
             </div>
         </div>
     </div>
 
-    <div id="sheetOverlay" class="sheet-overlay" onclick="toggleSheet()"></div>
-    <div id="bottomSheet" class="bottom-sheet">
-        <div style="width:40px; height:5px; background:#ddd; border-radius:5px; margin:10px auto;"></div>
-        <div style="padding:20px; display:grid; grid-template-columns:repeat(3, 1fr); gap:20px;">
-            <div class="tab-item" onclick="changeTab('lavoro', this)">
-                <div style="background:#eee; padding:15px; border-radius:15px;">💼</div>
-                <span>Lavoro</span>
-            </div>
-        </div>
+    <div id="scannerOverlay">
+        <div id="reader"></div>
+        <button class="btn-action" style="background:var(--danger); width:80%; margin: 20px auto;" onclick="stopScan()">ANNULLA</button>
     </div>
 
-    <div id="addModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:3000;">
-        <div style="background:white; margin:20% auto; padding:20px; width:80%; border-radius:20px;">
-            <h4>Nuovo Elemento</h4>
-            <button onclick="closeModal()">Chiudi</button>
-        </div>
+    <div class="modal" id="groceryPreviewModal">
+        <h3>Prodotto Trovato</h3>
+        <input type="text" id="groceryTitle" class="login-input" placeholder="Titolo">
+        <input type="text" id="groceryDesc" class="login-input" placeholder="Descrizione">
+        <input type="number" id="groceryPrice" class="login-input" placeholder="Prezzo €">
+        <button class="btn-action" onclick="saveGrocery()">SALVA NELLA SPESA</button>
+        <button onclick="document.getElementById('groceryPreviewModal').style.display='none'" style="background:none; border:none; color:gray; width:100%; margin-top:15px;">Annulla</button>
     </div>
 
+    <div class="modal" id="addModal">
+        <select id="typeSelector" onchange="toggleFields()" class="login-input">
+            <option value="link">Link / Social / Contatto</option>
+            <option value="lavoro">Lavoro (Ore / Note)</option>
+        </select>
+        <div id="linkFields">
+            <input type="text" id="siteName" class="login-input" placeholder="Nome">
+            <input type="text" id="siteUrl" class="login-input" placeholder="URL o Numero">
+            <select id="siteCategory" class="login-input">
+                <option value="web">Sito Web</option>
+                <option value="social">Social Network</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="contatti">Chiamata</option>
+            </select>
+        </div>
+        <div id="workFields" style="display:none">
+            <input type="text" id="workClient" class="login-input" placeholder="Cliente">
+            <input type="text" id="workNote" class="login-input" placeholder="Note">
+            <input type="number" id="workHours" class="login-input" placeholder="Ore">
+            <input type="date" id="workDate" class="login-input" value="2026-02-18">
+            <button id="recordBtn" class="btn-action" style="background:var(--success)" onclick="toggleRecording()">🎤 REGISTRA AUDIO</button>
+            <div id="audioStatus" style="font-size:11px; text-align:center; margin-top:5px;">Nessun audio</div>
+        </div>
+        <button class="btn-action" onclick="saveData()">SALVA</button>
+        <button onclick="closeModal()" style="background:none; border:none; color:gray; width:100%; margin-top:15px;">Chiudi</button>
+    </div>
+
+    <div id="deleteOverlay">
+        <div class="login-card" style="padding:30px;">
+            <p>Eliminare questo elemento?</p>
+            <button class="btn-action" style="background:var(--danger)" id="confirmDelete">ELIMINA</button>
+            <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="background:none; border:none; color:gray; width:100%; margin-top:10px;">Annulla</button>
+        </div>
+    </div>
 </body>
 </html>
