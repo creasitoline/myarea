@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LAB: Scanner Prezzi REALI</title>
+    <title>LAB: Scanner Prezzi REALI (Fix)</title>
     
     <script src="https://unpkg.com/html5-qrcode"></script>
 
@@ -11,7 +11,7 @@
         :root { --primary: #007AFF; --bg: #f2f2f7; --success: #34C759; }
         body { font-family: -apple-system, sans-serif; background: var(--bg); margin: 0; padding: 15px; text-align: center; }
         
-        #reader { width: 100%; max-width: 400px; margin: 0 auto; border-radius: 20px; overflow: hidden; background: black; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        #reader { width: 100%; max-width: 400px; margin: 0 auto; border-radius: 20px; overflow: hidden; background: black; }
         
         .product-card { 
             background: white; border-radius: 25px; padding: 20px; 
@@ -21,125 +21,97 @@
 
         @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
-        .product-img { width: 100px; height: 100px; object-fit: contain; float: left; margin-right: 15px; border-radius: 10px; background: #fff; }
+        .product-img { width: 80px; height: 80px; object-fit: contain; float: left; margin-right: 15px; border-radius: 10px; }
         .product-info { overflow: hidden; }
-        .product-title { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 5px; }
-        .product-brand { color: #8e8e93; font-size: 13px; text-transform: uppercase; margin-bottom: 10px; }
-
-        .real-price-box { 
-            clear: both; margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 15px; border: 1px dashed #ccc;
-        }
-
-        .btn-check-price {
-            background: var(--success); color: white; border: none; width: 100%; 
-            padding: 12px; border-radius: 10px; font-weight: bold; margin-top: 10px; cursor: pointer;
-        }
-
-        /* MODALE PER RISULTATI REALI */
-        #priceModal {
-            display: none; position: fixed; inset: 0; background: white; z-index: 1000;
-            flex-direction: column; animation: slideUp 0.3s;
-        }
-        .modal-header { padding: 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ddd; }
-        #priceFrame { flex: 1; border: none; width: 100%; }
+        .product-title { font-size: 18px; font-weight: bold; color: #333; }
         
-        .btn-close { background: #eee; border: none; padding: 8px 15px; border-radius: 8px; font-weight: bold; }
-        #status { margin-top: 10px; font-size: 12px; color: #666; }
+        .search-options { clear: both; margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        
+        .btn-search {
+            padding: 12px; border: none; border-radius: 12px; color: white; font-weight: bold;
+            font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px;
+        }
+        .google { background: #4285F4; }
+        .amazon { background: #FF9900; }
+        
+        .status-msg { margin-top: 10px; font-size: 12px; color: #666; }
     </style>
 </head>
 <body>
 
-    <h3>Scanner Real-Time 📦</h3>
-    
+    <h3>Scanner Prodotto 📦</h3>
     <div id="reader"></div>
-    <div id="status">Pronto per la scansione...</div>
+    <div id="status" class="status-msg">Pronto per la scansione...</div>
 
     <div id="productCard" class="product-card">
         <img id="pImg" class="product-img" src="" alt="">
         <div class="product-info">
             <div id="pTitle" class="product-title">Caricamento...</div>
-            <div id="pBrand" class="product-brand">---</div>
+            <div id="pBrand" style="color:#8e8e93; font-size:13px;">---</div>
         </div>
 
-        <div class="real-price-box">
-            <div style="font-size: 14px; font-weight: bold; color: #555;">💰 Confronta Prezzi Reali:</div>
-            <p style="font-size: 12px; color: #777;">Clicca per cercare il prezzo più basso su Google Shopping e Amazon</p>
-            <button class="btn-check-price" id="searchBtn">VEDI PREZZI ONLINE</button>
+        <div style="margin-top:20px; font-weight:bold; font-size:14px;">Confronta prezzi reali su:</div>
+        
+        <div class="search-options">
+            <button class="btn-search google" id="btnGoogle">Google Shopping</button>
+            <button class="btn-search amazon" id="btnAmazon">Amazon</button>
         </div>
 
-        <button class="btn-check-price" style="background:var(--primary); margin-top: 10px;" onclick="location.reload()">NUOVA SCANSIONE</button>
-    </div>
-
-    <div id="priceModal">
-        <div class="modal-header">
-            <span style="font-weight: bold;">Risultati dal Web</span>
-            <button class="btn-close" onclick="closePrices()">CHIUDI</button>
-        </div>
-        <iframe id="priceFrame" src=""></iframe>
+        <button onclick="location.reload()" style="width:100%; margin-top:15px; padding:12px; border-radius:12px; border:none; background:#eee; font-weight:bold;">NUOVA SCANSIONE</button>
     </div>
 
     <script>
         let html5QrCode = new Html5Qrcode("reader");
 
-        async function fetchRealData(barcode) {
-            document.getElementById('status').innerText = "Ricerca in corso...";
-            
+        async function fetchInfo(barcode) {
+            document.getElementById('status').innerText = "Identificazione...";
             try {
-                // 1. API Open Food Facts per Nome e Foto (Reali)
                 const response = await fetch(`https://it.openfoodfacts.org/api/v0/product/${barcode}.json`);
                 const data = await response.json();
 
+                let name = "Prodotto Generico";
+                let brand = "Codice: " + barcode;
+                let img = "https://via.placeholder.com/100?text=📦";
+
                 if (data.status === 1) {
-                    const p = data.product;
-                    showUI(p.product_name, p.brands, p.image_url, barcode);
-                } else {
-                    // Se non è cibo, proviamo una ricerca generica
-                    showUI("Prodotto Generico", "Barcode: " + barcode, "https://via.placeholder.com/100?text=Scan", barcode);
+                    name = data.product.product_name || name;
+                    brand = data.product.brands || brand;
+                    img = data.product.image_url || img;
                 }
+
+                showCard(name, brand, img, barcode);
             } catch (err) {
-                console.error(err);
-                document.getElementById('status').innerText = "Errore connessione.";
+                showCard("Errore di rete", "Riprova", "", barcode);
             }
         }
 
-        function showUI(name, brand, img, code) {
+        function showCard(name, brand, img, code) {
             document.getElementById('productCard').style.display = 'block';
-            document.getElementById('pTitle').innerText = name || "Sconosciuto";
-            document.getElementById('pBrand').innerText = brand || "Marca non rilevata";
-            document.getElementById('pImg').src = img || "https://via.placeholder.com/100?text=No+Photo";
-            document.getElementById('status').innerText = "Codice rilevato: " + code;
+            document.getElementById('pTitle').innerText = name;
+            document.getElementById('pBrand').innerText = brand;
+            document.getElementById('pImg').src = img;
+            document.getElementById('status').innerText = "Fatto!";
 
-            // Configura il bottone per la ricerca REALE
-            document.getElementById('searchBtn').onclick = () => {
-                openPrices(name + " " + (brand || ""));
+            const query = encodeURIComponent(name + " " + (brand !== code ? brand : ""));
+
+            // Invece di iframe, usiamo window.open che non viene bloccato
+            document.getElementById('btnGoogle').onclick = () => {
+                window.open(`https://www.google.com/search?tbm=shop&q=${query}`, '_blank');
+            };
+            document.getElementById('btnAmazon').onclick = () => {
+                window.open(`https://www.amazon.it/s?k=${query}`, '_blank');
             };
         }
 
-        function openPrices(query) {
-            const modal = document.getElementById('priceModal');
-            const frame = document.getElementById('priceFrame');
-            // Usiamo Google Shopping come aggregatore reale
-            const searchUrl = `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(query)}`;
-            
-            frame.src = searchUrl;
-            modal.style.display = 'flex';
-        }
-
-        function closePrices() {
-            document.getElementById('priceModal').style.display = 'none';
-            document.getElementById('priceFrame').src = "";
-        }
-
-        function startScanner() {
-            const config = { fps: 15, qrbox: { width: 250, height: 150 } };
-            html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => {
+        function start() {
+            html5QrCode.start({ facingMode: "environment" }, { fps: 15, qrbox: 250 }, (text) => {
                 html5QrCode.stop();
                 if (navigator.vibrate) navigator.vibrate(100);
-                fetchRealData(decodedText);
+                fetchInfo(text);
             });
         }
 
-        window.onload = startScanner;
+        window.onload = start;
     </script>
 </body>
 </html>
