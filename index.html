@@ -36,8 +36,6 @@
         let editIndex = null;
         let pressTimer;
         let searchTerm = "";
-        let mediaRecorder;
-        let audioChunks = [];
         let audioBase64 = null;
 
         const waIcon = "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg";
@@ -120,7 +118,7 @@
             document.getElementById('sheetOverlay').classList.remove('active');
         };
 
-        // --- RICEZIONE DATI SCANNER CON FOTO ---
+        // --- RICEZIONE DATI SCANNER (FIX PREZZO E NEGOZIO) ---
         window.addEventListener('message', (event) => {
             if (event.data.type === 'qr-success') {
                 document.getElementById('scannerFrame').style.display = 'none';
@@ -129,14 +127,16 @@
                 const barcode = event.data.code;
                 const nome = event.data.productName || "Nuovo Prodotto";
                 const foto = event.data.productImg || "https://cdn-icons-png.flaticon.com/512/672/672431.png";
+                const prezzo = event.data.price || "0.00";
+                const negozio = event.data.shop || "Da definire";
                 
                 if(!userData.myShopping) userData.myShopping = [];
                 
                 userData.myShopping.unshift({
                     id: barcode,
                     name: nome,
-                    price: "0.00",
-                    shop: "Da definire",
+                    price: prezzo,
+                    shop: negozio,
                     img: foto,
                     date: new Date().toLocaleDateString('it-IT')
                 });
@@ -149,6 +149,15 @@
                 document.getElementById('scannerFrame').src = "";
             }
         });
+
+        // --- FUNZIONE ZOOM FOTO ---
+        window.zoomImage = (url) => {
+            const overlay = document.createElement('div');
+            overlay.style = "position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:10000; display:flex; align-items:center; justify-content:center; cursor:zoom-out;";
+            overlay.innerHTML = `<img src="${url}" style="max-width:95%; max-height:90%; border-radius:15px; box-shadow:0 0 30px rgba(0,0,0,0.5);">`;
+            overlay.onclick = () => document.body.removeChild(overlay);
+            document.body.appendChild(overlay);
+        };
 
         window.filterItems = (val) => { searchTerm = val.toLowerCase(); render(); };
 
@@ -177,12 +186,12 @@
                         div.className = 'work-card';
                         div.style.borderLeft = "5px solid var(--success)";
                         div.innerHTML = `
-                            <div style="width:50px; height:50px; margin-right:15px; border-radius:10px; overflow:hidden; background:#eee; flex-shrink:0;">
+                            <div style="width:55px; height:55px; margin-right:15px; border-radius:10px; overflow:hidden; background:#eee; flex-shrink:0; cursor:pointer;" onclick="event.stopPropagation(); zoomImage('${s.img}')">
                                 <img src="${s.img || 'https://cdn-icons-png.flaticon.com/512/672/672431.png'}" style="width:100%; height:100%; object-fit:cover;">
                             </div>
                             <div class="work-info" onclick="editShopping(${i})">
                                 <h4 style="color:var(--primary)">${s.name}</h4>
-                                <p>${s.price}€ - ${s.shop}</p>
+                                <p><b>${s.price}€</b> - ${s.shop}</p>
                                 <div class="work-meta">${s.date}</div>
                             </div>
                             <div class="trash-btn" onclick="askDelete(${i}, 'spesa')">${trashSVG}</div>
@@ -270,8 +279,6 @@
         };
         window.editLink = (index) => { hideAllMenus(); editIndex = index; const l = userData.myLinks[index]; document.getElementById('typeSelector').value = 'link'; toggleFields(); document.getElementById('siteName').value = l.title; document.getElementById('siteUrl').value = l.url; document.getElementById('siteCategory').value = l.category; document.getElementById('addModal').style.display = 'block'; };
         window.editWork = (index) => { editIndex = index; const w = userData.myWork[index]; document.getElementById('typeSelector').value = 'lavoro'; toggleFields(); document.getElementById('workClient').value = w.client; document.getElementById('workNote').value = w.note; document.getElementById('workHours').value = w.hours; document.getElementById('workDate').value = w.date; audioBase64 = w.audio || null; document.getElementById('addModal').style.display = 'block'; };
-        window.importFromPhone = async () => { /* ... (resta uguale) ... */ };
-        window.toggleRecording = async () => { /* ... (resta uguale) ... */ };
     </script>
 
     <style>
@@ -362,7 +369,6 @@
             <option value="spesa">Prodotto Spesa</option>
         </select>
         <div id="linkFields">
-            <button class="btn-action" style="background:#5856D6; font-size:12px;" onclick="importFromPhone()">👤 IMPORTA RUBRICA</button>
             <input type="text" id="siteName" class="login-input" placeholder="Nome">
             <input type="text" id="siteUrl" class="login-input" placeholder="URL o Numero">
             <select id="siteCategory" class="login-input"><option value="web">Sito Web</option><option value="social">Social Network</option><option value="whatsapp">WhatsApp</option><option value="contatti">Chiamata</option></select>
@@ -372,8 +378,6 @@
             <input type="text" id="workNote" class="login-input" placeholder="Note">
             <input type="number" id="workHours" class="login-input" placeholder="Ore">
             <input type="date" id="workDate" class="login-input">
-            <button id="recordBtn" class="btn-action" style="background:var(--success)" onclick="toggleRecording()">🎤 REGISTRA AUDIO</button>
-            <div id="audioStatus" style="font-size:11px; text-align:center; margin-top:5px;">Nessun audio</div>
         </div>
         <div id="shopFields" style="display:none">
             <input type="text" id="shopName" class="login-input" placeholder="Nome Prodotto">
