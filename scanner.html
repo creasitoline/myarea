@@ -1,1 +1,37 @@
 
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; }
+        #reader { width: 100%; flex-grow: 1; }
+        .controls { padding: 20px; background: rgba(0,0,0,0.8); text-align: center; }
+        .btn-exit { background: #FF3B30; color: white; border: none; padding: 12px 25px; border-radius: 10px; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div id="reader"></div>
+    <div class="controls">
+        <button class="btn-exit" onclick="stopAndClose()">ANNULLA</button>
+    </div>
+
+    <script>
+        const html5QrCode = new Html5Qrcode("reader");
+        const config = { fps: 15, qrbox: { width: 250, height: 250 } };
+
+        html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => {
+            // Invia il risultato all'app madre
+            window.parent.postMessage({ type: 'qr-success', code: decodedText }, '*');
+        }).catch(err => console.error("Errore camera:", err));
+
+        function stopAndClose() {
+            html5QrCode.stop().then(() => {
+                window.parent.postMessage({ type: 'qr-close' }, '*');
+            }).catch(() => window.parent.postMessage({ type: 'qr-close' }, '*'));
+        }
+    </script>
+</body>
+</html>
