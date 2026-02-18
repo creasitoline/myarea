@@ -89,14 +89,9 @@
             const overlay = document.getElementById('sheetOverlay');
             const isOpen = sheet.classList.toggle('open');
             overlay.classList.toggle('active');
-            
-            // Gestione tasto indietro per chiudere menu
-            if(isOpen) {
-                window.history.pushState({menuOpen: true}, "");
-            }
+            if(isOpen) { window.history.pushState({menuOpen: true}, ""); }
         };
 
-        // Chiudi menu se si clicca fuori (overlay) o tasto indietro
         window.onpopstate = function() {
             const sheet = document.getElementById('bottomSheet');
             if(sheet.classList.contains('open')) {
@@ -108,15 +103,12 @@
         window.changeTab = (tab, el) => { 
             currentTab = tab; 
             document.querySelectorAll('.tab-item').forEach(i => i.classList.remove('active')); 
-            
-            // Seleziona l'elemento corretto nella bottom bar o evidenzia "Altro"
             const mainTabs = ['tutti', 'contatti', 'lavoro', 'social'];
             if(mainTabs.includes(tab)) {
                 if(el) el.classList.add('active');
             } else {
                 document.getElementById('tab-altro').classList.add('active');
             }
-
             if(tab !== 'altro') { 
                 document.getElementById('bottomSheet').classList.remove('open'); 
                 document.getElementById('sheetOverlay').classList.remove('active'); 
@@ -124,6 +116,7 @@
             render(); 
         };
 
+        // --- GESTIONE SCANNER AGGIORNATA ---
         window.openScanner = () => {
             const frame = document.getElementById('scannerFrame');
             frame.src = "scanner.html";
@@ -135,23 +128,24 @@
         window.addEventListener('message', (event) => {
             if (event.data.type === 'qr-success') {
                 document.getElementById('scannerFrame').style.display = 'none';
-                const barcode = event.data.code;
-                const prodotto = prompt("Inserisci nome prodotto:", "Nuovo Prodotto");
-                const prezzo = prompt("Prezzo €:");
-                const negozio = prompt("Negozio:");
+                document.getElementById('scannerFrame').src = "";
                 
-                if(prodotto && prezzo) {
-                    if(!userData.myShopping) userData.myShopping = [];
-                    userData.myShopping.unshift({
-                        id: barcode,
-                        name: prodotto,
-                        price: prezzo,
-                        shop: negozio || 'N/D',
-                        date: new Date().toLocaleDateString()
-                    });
-                    syncCloud();
-                    changeTab('spesa');
-                }
+                const barcode = event.data.code;
+                const nomeDinamico = event.data.productName || "Nuovo Prodotto";
+                const prezzoDinamico = event.data.productPrice || "0.00";
+                
+                if(!userData.myShopping) userData.myShopping = [];
+                
+                userData.myShopping.unshift({
+                    id: barcode,
+                    name: nomeDinamico,
+                    price: prezzoDinamico,
+                    shop: 'Da impostare',
+                    date: new Date().toLocaleDateString('it-IT')
+                });
+                
+                syncCloud();
+                changeTab('spesa');
             }
             if (event.data.type === 'qr-close') {
                 document.getElementById('scannerFrame').style.display = 'none';
@@ -160,6 +154,11 @@
         });
 
         window.filterItems = (val) => { searchTerm = val.toLowerCase(); render(); };
+
+        window.updateShopping = (idx, field, val) => { 
+            userData.myShopping[idx][field] = val; 
+            syncCloud(); 
+        };
 
         window.render = () => {
             const grid = document.getElementById('appGrid');
@@ -188,21 +187,23 @@
                 });
             } else if (currentTab === 'spesa') {
                 grid.style.display = 'none'; workContainer.style.display = 'none'; shoppingContainer.style.display = 'block';
-                if(userData.myShopping) {
+                if(userData.myShopping && userData.myShopping.length > 0) {
                     userData.myShopping.forEach((s, i) => {
                         const div = document.createElement('div');
                         div.className = 'work-card';
                         div.style.borderLeft = "5px solid var(--success)";
                         div.innerHTML = `
                             <div class="work-info">
-                                <h4 contenteditable="true" onblur="updateShopping(${i}, 'name', this.innerText)">${s.name}</h4>
-                                <p>Prezzo: <b contenteditable="true" onblur="updateShopping(${i}, 'price', this.innerText)">${s.price}</b>€ - Negozio: <span contenteditable="true" onblur="updateShopping(${i}, 'shop', this.innerText)">${s.shop}</span></p>
+                                <h4 contenteditable="true" onblur="updateShopping(${i}, 'name', this.innerText)" style="color:var(--primary); outline:none;">${s.name}</h4>
+                                <p style="margin:5px 0;">Prezzo: <b contenteditable="true" onblur="updateShopping(${i}, 'price', this.innerText)">${s.price}</b>€ - Negozio: <span contenteditable="true" onblur="updateShopping(${i}, 'shop', this.innerText)">${s.shop}</span></p>
                                 <div class="work-meta">${s.date} • Cod: ${s.id}</div>
                             </div>
-                            <div class="trash-btn" onclick="askDelete(${i}, 'spesa')">${trashSVG}</div>
+                            <div class="trash-btn" onclick="askDelete(${i}, 'spesa')" style="padding:10px;">${trashSVG}</div>
                         `;
                         shoppingContainer.appendChild(div);
                     });
+                } else {
+                    shoppingContainer.innerHTML = '<div style="text-align:center; padding:40px; color:gray;">Nessun prodotto in lista.</div>';
                 }
             } else {
                 grid.style.display = 'grid'; workContainer.style.display = 'none'; shoppingContainer.style.display = 'none';
@@ -225,7 +226,6 @@
             }
         };
 
-        window.updateShopping = (idx, field, val) => { userData.myShopping[idx][field] = val; syncCloud(); };
         window.importFromPhone = async () => {
             try {
                 const props = ['name', 'tel'];
@@ -357,7 +357,6 @@
         .tab-item.active { color: var(--primary); }
         .tab-item svg { width: 24px; height: 24px; fill: currentColor; margin-bottom: 4px; }
         
-        /* BOTTOM SHEET "ALTRO" */
         .bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); z-index: 4500; transform: translateY(100%); transition: transform 0.3s ease-out; max-height: 50vh; display: flex; flex-direction: column; }
         .bottom-sheet.open { transform: translateY(-70px); }
         .sheet-handle { width: 40px; height: 5px; background: #ddd; border-radius: 5px; margin: 12px auto; flex-shrink: 0; }
@@ -368,9 +367,9 @@
         .add-btn { position: fixed; bottom: 100px; right: 20px; width: 60px; height: 60px; background: var(--primary); color: white; border-radius: 50%; border: none; font-size: 35px; box-shadow: 0 5px 15px rgba(0,122,255,0.3); z-index: 3000; }
         .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 25px; width: 85%; max-width: 320px; z-index: 6000; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
         .btn-action { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-weight: bold; width: 100%; margin-top: 10px; }
-        .context-menu { position: absolute; top: -10px; background: white; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); display: none; z-index: 500; flex-direction: column; padding: 5px; }
+        .context-menu { position: absolute; top: -10px; background: white; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); display: none; z-index: 50; flex-direction: column; padding: 5px; }
         #deleteOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 7000; align-items: center; justify-content: center; }
-        .trash-btn svg { width: 20px; fill: var(--danger); }
+        .trash-btn svg { width: 22px; height: 22px; fill: var(--danger); }
         
         #scannerFrame { display: none; position: fixed; inset: 0; width: 100%; height: 100%; border: none; z-index: 9999; background: black; }
     </style>
