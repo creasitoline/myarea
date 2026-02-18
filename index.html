@@ -84,6 +84,23 @@
             }
         });
 
+        // --- INTEGRAZIONE MESSAGGI SCANNER ---
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'qr-success') {
+                document.getElementById('siteUrl').value = event.data.code;
+                document.getElementById('scannerFrame').style.display = 'none';
+                alert("Codice scansionato!");
+            }
+            if (event.data.type === 'qr-close') {
+                document.getElementById('scannerFrame').style.display = 'none';
+            }
+        });
+
+        window.openScanner = () => {
+            document.getElementById('scannerFrame').style.display = 'block';
+        };
+        // -------------------------------------
+
         window.filterItems = (val) => {
             searchTerm = val.toLowerCase();
             render();
@@ -192,6 +209,7 @@
                     mediaRecorder.start();
                     btn.innerText = "🛑 FERMA";
                     btn.style.background = "var(--danger)";
+                    btn.style.color = "white";
                 } catch (err) { alert("Attiva il microfono."); }
             } else {
                 mediaRecorder.stop();
@@ -269,7 +287,6 @@
         .login-card img { width: 120px; margin-bottom: 20px; }
         .login-input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid #ddd; font-size: 16px; box-sizing: border-box; }
         
-        /* Ripristino stile data calendario */
         input[type="date"]:before { content: attr(placeholder); color: #aaa; margin-right: 0.5em; }
         input[type="date"]:focus:before, input[type="date"]:valid:before { content: ""; }
 
@@ -312,9 +329,12 @@
         .context-menu { position: absolute; top: -10px; background: white; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); display: none; z-index: 500; flex-direction: column; padding: 5px; }
         #deleteOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 4000; align-items: center; justify-content: center; }
         .trash-btn svg { width: 20px; fill: var(--danger); }
+        #scannerFrame { display:none; position:fixed; inset:0; width:100%; height:100%; border:none; z-index:9999; background:black; }
     </style>
 </head>
 <body onclick="hideAllMenus()">
+
+    <iframe id="scannerFrame" src="scanner.html"></iframe>
 
     <div id="welcomeScreen">
         <div class="login-card">
@@ -388,7 +408,10 @@
             <option value="lavoro">Lavoro (Ore / Note)</option>
         </select>
         <div id="linkFields">
-            <button class="btn-action" style="background:#5856D6; font-size:12px;" onclick="importFromPhone()">👤 IMPORTA RUBRICA</button>
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <button class="btn-action" style="background:#5856D6; font-size:11px; margin:0;" onclick="importFromPhone()">👤 RUBRICA</button>
+                <button class="btn-action" style="background:#34C759; font-size:11px; margin:0;" onclick="openScanner()">📷 QR SCAN</button>
+            </div>
             <input type="text" id="siteName" class="login-input" placeholder="Nome">
             <input type="text" id="siteUrl" class="login-input" placeholder="URL o Numero">
             <select id="siteCategory" class="login-input">
