@@ -7,8 +7,9 @@
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         :root { --primary: #007AFF; --bg: #f2f2f7; --success: #34C759; --danger: #FF3B30; }
+        
         body { 
-            font-family: -apple-system, sans-serif; 
+            font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
             background: #000; 
             margin: 0; 
             padding: 0; 
@@ -18,36 +19,82 @@
             overflow-y: auto;
         }
         
-        #reader { width: 100% !important; border: none !important; }
+        /* Scanner Styling */
+        #reader { width: 100% !important; border: none !important; background: #000; }
         #reader video { object-fit: cover !important; }
+        #reader__scan_region { background: #000; }
 
         .content-overlay {
             background: var(--bg);
             color: #333;
             border-radius: 25px 25px 0 0;
             padding: 20px;
-            min-height: 50vh;
-            margin-top: -20px;
+            min-height: 60vh;
+            margin-top: -30px;
             position: relative;
             z-index: 10;
+            box-shadow: 0 -10px 20px rgba(0,0,0,0.3);
+            padding-bottom: 100px; /* Spazio per tastiera */
         }
 
-        .card { background: white; border-radius: 20px; padding: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); display: none; margin-bottom: 20px; }
+        /* Card Prodotto */
+        .card { 
+            background: white; 
+            border-radius: 20px; 
+            padding: 15px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05); 
+            display: none; 
+            margin-bottom: 20px;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
         .prod-header { display: flex; gap: 12px; align-items: center; }
-        .prod-img { width: 70px; height: 70px; object-fit: contain; border-radius: 8px; background: #f9f9f9; }
-        .prod-info h3 { margin: 0; font-size: 16px; color: #333; }
+        .prod-img { width: 80px; height: 80px; object-fit: contain; border-radius: 12px; background: #f9f9f9; border: 1px solid #eee; }
+        .prod-info { flex: 1; }
+        .prod-info h3 { margin: 0; font-size: 17px; color: #1c1c1e; line-height: 1.2; }
+        .prod-info small { color: #8e8e93; font-size: 13px; display: block; margin-top: 4px; }
         
-        .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 15px 0; }
-        .btn-s { padding: 12px; border: none; border-radius: 10px; color: white; font-size: 11px; font-weight: bold; cursor: pointer; text-align: center; text-decoration: none; }
+        /* Grid Bottoni Shopping */
+        .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 18px 0; }
+        .btn-s { 
+            padding: 12px; border: none; border-radius: 12px; color: white; 
+            font-size: 12px; font-weight: 600; cursor: pointer; 
+            text-align: center; text-decoration: none;
+            transition: opacity 0.2s;
+        }
+        .btn-s:active { opacity: 0.7; }
         .amz { background: #FF9900; } .ggl { background: #4285F4; } .eby { background: #0064D2; } .tpz { background: #E6000e; }
 
-        .save-form { background: #fff; padding: 15px; border-radius: 15px; border: 1px solid #e5e5ea; }
-        .save-form input { width: 100%; padding: 12px; margin: 5px 0; border-radius: 8px; border: 1px solid #ddd; box-sizing: border-box; font-size: 16px; -webkit-appearance: none; }
-        .btn-main { background: var(--primary); color: white; border: none; width: 100%; padding: 15px; border-radius: 12px; font-weight: bold; margin-top: 10px; font-size: 16px; }
+        /* Form di salvataggio */
+        .save-form { background: #fff; padding: 15px; border-radius: 18px; border: 1px solid #e5e5ea; }
+        .save-form b { display: block; margin-bottom: 10px; color: #1c1c1e; }
+        .save-form input { 
+            width: 100%; padding: 14px; margin: 8px 0; 
+            border-radius: 12px; border: 1px solid #d1d1d6; 
+            box-sizing: border-box; font-size: 16px; 
+            background: #f9f9f9; -webkit-appearance: none; 
+        }
+        .save-form input:focus { border-color: var(--primary); outline: none; background: #fff; }
+
+        .btn-main { 
+            background: var(--primary); color: white; border: none; 
+            width: 100%; padding: 16px; border-radius: 14px; 
+            font-weight: bold; margin-top: 12px; font-size: 16px; 
+            box-shadow: 0 4px 12px rgba(0,122,255,0.3);
+        }
 
         .close-scanner {
-            position: fixed; top: 15px; right: 15px; background: rgba(0,0,0,0.5); color: white;
-            border: none; border-radius: 50%; width: 35px; height: 35px; font-weight: bold; z-index: 100;
+            position: fixed; top: 15px; right: 15px; 
+            background: rgba(255,255,255,0.2); 
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            color: white; border: none; border-radius: 50%; 
+            width: 36px; height: 36px; font-size: 18px; 
+            z-index: 100; display: flex; align-items: center; justify-content: center;
         }
     </style>
 </head>
@@ -58,8 +105,8 @@
     <div id="reader"></div>
 
     <div class="content-overlay">
-        <div id="status" style="text-align: center; font-size: 14px; color: gray; margin-bottom: 15px;">
-            Inquadra un codice a barre per iniziare
+        <div id="status" style="text-align: center; font-size: 14px; color: #8e8e93; margin-bottom: 20px; font-weight: 500;">
+            Inquadra un codice a barre
         </div>
 
         <div id="productCard" class="card">
@@ -73,21 +120,21 @@
 
             <div class="shop-grid">
                 <div class="btn-s amz" id="linkAmz">Amazon</div>
-                <div class="btn-s ggl" id="linkGgl">Google</div>
+                <div class="btn-s ggl" id="linkGgl">Google Shopping</div>
                 <div class="btn-s eby" id="linkEby">eBay</div>
                 <div class="btn-s tpz" id="linkTpz">Trovaprezzi</div>
             </div>
 
             <div class="save-form">
-                <b style="font-size: 13px;">Registra acquisto:</b>
-                <input type="number" id="userPrice" step="0.01" placeholder="Prezzo pagato (es: 1.50)">
-                <input type="text" id="userShop" placeholder="Negozio (es: Amazon, Conad)">
+                <b>Registra nel "Mercatino":</b>
+                <input type="number" id="userPrice" inputmode="decimal" step="0.01" placeholder="Prezzo pagato (es: 1.50)">
+                <input type="text" id="userShop" placeholder="Negozio o Venditore">
                 <button class="btn-main" onclick="saveAndSend()">SALVA NEI DOCUMENTI</button>
             </div>
         </div>
         
-        <p style="text-align: center; color: #999; font-size: 12px; margin-top: 20px;">
-            myArea Shopping Lab v2.0
+        <p style="text-align: center; color: #c7c7cc; font-size: 12px; margin-top: 30px; letter-spacing: 0.5px;">
+            MYAREA SHOPPING SYSTEM 2026
         </p>
     </div>
 
@@ -96,31 +143,32 @@
         let currentScan = null;
 
         async function onScanSuccess(decodedText) {
-            if (navigator.vibrate) navigator.vibrate(100);
-            await html5QrCode.stop();
-            document.getElementById('status').innerText = "Prodotto rilevato! Ricerca in corso...";
+            if (navigator.vibrate) navigator.vibrate([50, 30, 50]); // Vibrazione stile feedback iOS
             
             try {
+                await html5QrCode.stop();
+                document.getElementById('status').innerHTML = "✨ Prodotto rilevato!";
+                document.getElementById('status').style.color = "var(--success)";
+                
                 const response = await fetch(`https://it.openfoodfacts.org/api/v0/product/${decodedText}.json`);
                 const data = await response.json();
                 
                 currentScan = { 
-                    name: "Prodotto Generico", 
-                    brand: "Barcode: " + decodedText, 
+                    name: "Prodotto non catalogato", 
+                    brand: "Codice: " + decodedText, 
                     img: "https://cdn-icons-png.flaticon.com/512/672/672431.png",
                     id: decodedText 
                 };
 
                 if (data.status === 1) {
                     currentScan.name = data.product.product_name || currentScan.name;
-                    currentScan.brand = data.product.brands || currentScan.brand;
-                    // Prende l'immagine originale del prodotto
+                    currentScan.brand = data.product.brands || data.product.brand_owner || currentScan.brand;
                     currentScan.img = data.product.image_url || currentScan.img;
                 }
 
                 showProduct(currentScan);
             } catch (e) {
-                alert("Errore di rete. Riprovo...");
+                console.error(e);
                 startScanner();
             }
         }
@@ -130,57 +178,72 @@
             document.getElementById('resTitle').innerText = p.name;
             document.getElementById('resBrand').innerText = p.brand;
             document.getElementById('resImg').src = p.img;
-            document.getElementById('status').innerText = "Prodotto trovato!";
 
-            const query = encodeURIComponent(p.name + " " + (p.brand.includes(':') ? "" : p.brand));
+            const query = encodeURIComponent(p.name + " " + (p.brand.includes('Codice') ? "" : p.brand));
             document.getElementById('linkAmz').onclick = () => window.open(`https://www.amazon.it/s?k=${query}`, '_blank');
             document.getElementById('linkGgl').onclick = () => window.open(`https://www.google.com/search?tbm=shop&q=${query}`, '_blank');
             document.getElementById('linkEby').onclick = () => window.open(`https://www.ebay.it/sch/i.html?_nkw=${query}`, '_blank');
             document.getElementById('linkTpz').onclick = () => window.open(`https://www.trovaprezzi.it/search?libera=${query}`, '_blank');
             
-            document.getElementById('productCard').scrollIntoView({ behavior: 'smooth' });
+            // Scroll automatico e focus sul prezzo
+            setTimeout(() => {
+                document.getElementById('productCard').scrollIntoView({ behavior: 'smooth' });
+                document.getElementById('userPrice').focus();
+            }, 300);
         }
 
         function saveAndSend() {
             const price = document.getElementById('userPrice').value;
             const shop = document.getElementById('userShop').value;
 
-            if(!price || !shop) { alert("Inserisci prezzo e negozio!"); return; }
+            if(!price || !shop) { 
+                alert("Compila i campi per salvare l'acquisto"); 
+                return; 
+            }
 
-            // MODIFICA QUI: Inviamo anche productImg alla index.html
+            // Invio dati alla index.html (MyArea)
             window.parent.postMessage({
                 type: 'qr-success',
                 code: currentScan.id,
                 productName: currentScan.name,
-                productImg: currentScan.img, // <--- Fondamentale per vedere la foto nella lista!
+                productImg: currentScan.img,
                 price: price,
-                shop: shop
+                shop: shop,
+                date: new Date().toLocaleDateString('it-IT')
             }, '*');
 
+            // Reset UI
             document.getElementById('productCard').style.display = 'none';
             document.getElementById('userPrice').value = "";
             document.getElementById('userShop').value = "";
+            document.getElementById('status').innerText = "Inquadra un codice a barre";
+            document.getElementById('status').style.color = "#8e8e93";
+            
             startScanner();
         }
 
         function startScanner() {
-            const config = { fps: 15, qrbox: { width: 250, height: 150 } };
+            const config = { 
+                fps: 20, 
+                qrbox: { width: 260, height: 160 },
+                aspectRatio: 1.0 
+            };
+            
             html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess)
             .catch(err => {
-                document.getElementById('status').innerText = "Errore Camera: " + err;
-                document.getElementById('status').style.color = "red";
+                document.getElementById('status').innerText = "Permesso fotocamera necessario";
+                document.getElementById('status').style.color = "var(--danger)";
             });
         }
 
         function stopAndClose() {
-            html5QrCode.stop().then(() => {
-                window.parent.postMessage({type: 'qr-close'}, '*');
-            }).catch(() => {
+            html5QrCode.stop().finally(() => {
                 window.parent.postMessage({type: 'qr-close'}, '*');
             });
         }
 
-        setTimeout(startScanner, 500);
+        // Avvio automatico
+        setTimeout(startScanner, 400);
     </script>
 </body>
 </html>
