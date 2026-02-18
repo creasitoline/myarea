@@ -1,21 +1,85 @@
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        body { margin: 0; background: #000; color: white; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
-        #reader { width: 100%; flex: 1; }
-        .controls { padding: 20px; text-align: center; background: #222; }
-        button { padding: 10px 20px; background: red; color: white; border: none; border-radius: 8px; }
+        body { 
+            margin: 0; 
+            background: #000; 
+            color: white; 
+            font-family: -apple-system, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            overflow: hidden;
+        }
+        #reader { 
+            width: 100% !important; 
+            flex: 1; 
+        }
+        /* Rende il video a tutto schermo */
+        #reader video {
+            object-fit: cover !important;
+        }
+        .controls { 
+            padding: 30px 20px; 
+            text-align: center; 
+            background: rgba(0,0,0,0.8); 
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+        .btn-close { 
+            padding: 15px 30px; 
+            background: #FF3B30; 
+            color: white; 
+            border: none; 
+            border-radius: 12px; 
+            font-weight: bold;
+            font-size: 16px;
+        }
     </style>
 </head>
 <body>
     <div id="reader"></div>
-    <div class="controls"><button onclick="window.parent.postMessage({type:'qr-close'}, '*')">CHIUDI</button></div>
+    <div class="controls">
+        <button class="btn-close" onclick="stopAndClose()">CHIUDI SCANNER</button>
+    </div>
+
     <script>
         const scanner = new Html5Qrcode("reader");
-        scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, 
-        (text) => { window.parent.postMessage({type:'qr-success', code: text}, '*'); });
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+        function startScanning() {
+            scanner.start(
+                { facingMode: "environment" }, 
+                config,
+                (text) => { 
+                    if (navigator.vibrate) navigator.vibrate(100);
+                    window.parent.postMessage({type:'qr-success', code: text}, '*'); 
+                    stopAndClose();
+                },
+                (error) => { /* scansione silenziosa */ }
+            ).catch(err => {
+                console.error("Errore camera:", err);
+                alert("Assicurati di usare HTTPS e dare i permessi alla camera.");
+            });
+        }
+
+        function stopAndClose() {
+            if(scanner.isScanning) {
+                scanner.stop().then(() => {
+                    window.parent.postMessage({type:'qr-close'}, '*');
+                });
+            } else {
+                window.parent.postMessage({type:'qr-close'}, '*');
+            }
+        }
+
+        // Avvio automatico
+        window.onload = startScanning;
     </script>
 </body>
 </html>
