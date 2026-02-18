@@ -83,12 +83,53 @@
             }
         });
 
-        // --- GESTIONE SCANNER (MODIFICATA) ---
+        // --- GESTIONE MENU E NAVIGAZIONE ---
+        window.toggleSheet = () => {
+            const sheet = document.getElementById('bottomSheet');
+            const overlay = document.getElementById('sheetOverlay');
+            const isOpen = sheet.classList.toggle('open');
+            overlay.classList.toggle('active');
+            
+            // Gestione tasto indietro per chiudere menu
+            if(isOpen) {
+                window.history.pushState({menuOpen: true}, "");
+            }
+        };
+
+        // Chiudi menu se si clicca fuori (overlay) o tasto indietro
+        window.onpopstate = function() {
+            const sheet = document.getElementById('bottomSheet');
+            if(sheet.classList.contains('open')) {
+                sheet.classList.remove('open');
+                document.getElementById('sheetOverlay').classList.remove('active');
+            }
+        };
+
+        window.changeTab = (tab, el) => { 
+            currentTab = tab; 
+            document.querySelectorAll('.tab-item').forEach(i => i.classList.remove('active')); 
+            
+            // Seleziona l'elemento corretto nella bottom bar o evidenzia "Altro"
+            const mainTabs = ['tutti', 'contatti', 'lavoro', 'social'];
+            if(mainTabs.includes(tab)) {
+                if(el) el.classList.add('active');
+            } else {
+                document.getElementById('tab-altro').classList.add('active');
+            }
+
+            if(tab !== 'altro') { 
+                document.getElementById('bottomSheet').classList.remove('open'); 
+                document.getElementById('sheetOverlay').classList.remove('active'); 
+            }
+            render(); 
+        };
+
         window.openScanner = () => {
             const frame = document.getElementById('scannerFrame');
-            frame.src = "scanner.html"; // Ricarica per resettare camera
+            frame.src = "scanner.html";
             frame.style.display = 'block';
-            toggleSheet(); // Chiude il menu Altro
+            document.getElementById('bottomSheet').classList.remove('open');
+            document.getElementById('sheetOverlay').classList.remove('active');
         };
 
         window.addEventListener('message', (event) => {
@@ -114,11 +155,10 @@
             }
             if (event.data.type === 'qr-close') {
                 document.getElementById('scannerFrame').style.display = 'none';
-                document.getElementById('scannerFrame').src = ""; // Stop camera
+                document.getElementById('scannerFrame').src = "";
             }
         });
 
-        // --- RESTO DELLE FUNZIONI (RENDER, TABS, ETC) ---
         window.filterItems = (val) => { searchTerm = val.toLowerCase(); render(); };
 
         window.render = () => {
@@ -186,15 +226,6 @@
         };
 
         window.updateShopping = (idx, field, val) => { userData.myShopping[idx][field] = val; syncCloud(); };
-        window.toggleSheet = () => { document.getElementById('bottomSheet').classList.toggle('open'); document.getElementById('sheetOverlay').classList.toggle('active'); };
-        window.changeTab = (tab, el) => { 
-            currentTab = tab; 
-            document.querySelectorAll('.tab-item').forEach(i => i.classList.remove('active')); 
-            if(el) el.classList.add('active'); 
-            if(tab !== 'altro') { document.getElementById('bottomSheet').classList.remove('open'); document.getElementById('sheetOverlay').classList.remove('active'); }
-            render(); 
-        };
-
         window.importFromPhone = async () => {
             try {
                 const props = ['name', 'tel'];
@@ -278,6 +309,7 @@
         window.openAddModal = () => { 
             editIndex = null; audioBase64 = null; 
             document.querySelectorAll('#addModal input').forEach(i => i.value = '');
+            document.getElementById('audioStatus').innerText = "Nessun audio";
             document.getElementById('addModal').style.display = 'block'; 
         };
         window.closeModal = () => document.getElementById('addModal').style.display = 'none';
@@ -294,7 +326,7 @@
         :root { --primary: #007AFF; --bg: #f2f2f7; --work: #FF9500; --danger: #FF3B30; --success: #34C759; }
         body, html { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: var(--bg); height: 100%; overflow: hidden; }
         
-        #welcomeScreen { position: fixed; inset: 0; background: #007AFF; display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        #welcomeScreen { position: fixed; inset: 0; background: #007AFF; display: flex; align-items: center; justify-content: center; z-index: 5000; }
         .login-card { background: white; padding: 40px 30px; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; }
         .login-card img { width: 120px; margin-bottom: 20px; }
         .login-input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid #ddd; font-size: 16px; box-sizing: border-box; }
@@ -320,36 +352,27 @@
         .work-meta { font-size: 11px; color: #999; font-weight: bold; }
         .custom-audio-player { width: 100%; height: 35px; margin-top: 8px; border-radius: 5px; }
 
-        .tab-bar { position: fixed; bottom: 0; width: 100%; background: rgba(255,255,255,0.95); backdrop-filter: blur(15px); display: flex; padding: 10px 0 30px 0; border-top: 1px solid #ddd; justify-content: space-around; z-index: 2000; }
+        .tab-bar { position: fixed; bottom: 0; width: 100%; background: rgba(255,255,255,0.95); backdrop-filter: blur(15px); display: flex; padding: 10px 0 30px 0; border-top: 1px solid #ddd; justify-content: space-around; z-index: 4000; }
         .tab-item { display: flex; flex-direction: column; align-items: center; color: #8e8e93; font-size: 10px; flex: 1; cursor: pointer; }
         .tab-item.active { color: var(--primary); }
         .tab-item svg { width: 24px; height: 24px; fill: currentColor; margin-bottom: 4px; }
         
-        .bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); z-index: 2500; transform: translateY(100%); transition: transform 0.3s ease-out; }
+        /* BOTTOM SHEET "ALTRO" */
+        .bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); z-index: 4500; transform: translateY(100%); transition: transform 0.3s ease-out; max-height: 50vh; display: flex; flex-direction: column; }
         .bottom-sheet.open { transform: translateY(-70px); }
-        .sheet-handle { width: 40px; height: 5px; background: #ddd; border-radius: 5px; margin: 12px auto; }
-        .sheet-content { padding: 10px 20px 40px 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; max-height: 40vh; overflow-y: auto; }
-        .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; z-index: 2400; }
+        .sheet-handle { width: 40px; height: 5px; background: #ddd; border-radius: 5px; margin: 12px auto; flex-shrink: 0; }
+        .sheet-content { padding: 0 20px 40px 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; overflow-y: auto; }
+        .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; z-index: 4400; }
         .sheet-overlay.active { display: block; }
 
-        .add-btn { position: fixed; bottom: 100px; right: 20px; width: 60px; height: 60px; background: var(--primary); color: white; border-radius: 50%; border: none; font-size: 35px; box-shadow: 0 5px 15px rgba(0,122,255,0.3); z-index: 999; }
-        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 25px; width: 85%; max-width: 320px; z-index: 3000; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        .add-btn { position: fixed; bottom: 100px; right: 20px; width: 60px; height: 60px; background: var(--primary); color: white; border-radius: 50%; border: none; font-size: 35px; box-shadow: 0 5px 15px rgba(0,122,255,0.3); z-index: 3000; }
+        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 25px; width: 85%; max-width: 320px; z-index: 6000; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
         .btn-action { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-weight: bold; width: 100%; margin-top: 10px; }
         .context-menu { position: absolute; top: -10px; background: white; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); display: none; z-index: 500; flex-direction: column; padding: 5px; }
-        #deleteOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 4000; align-items: center; justify-content: center; }
+        #deleteOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 7000; align-items: center; justify-content: center; }
         .trash-btn svg { width: 20px; fill: var(--danger); }
         
-        /* SCANNER FULLSCREEN */
-        #scannerFrame { 
-            display: none; 
-            position: fixed; 
-            inset: 0; 
-            width: 100%; 
-            height: 100%; 
-            border: none; 
-            z-index: 9999; 
-            background: black; 
-        }
+        #scannerFrame { display: none; position: fixed; inset: 0; width: 100%; height: 100%; border: none; z-index: 9999; background: black; }
     </style>
 </head>
 <body onclick="hideAllMenus()">
@@ -386,19 +409,31 @@
         <div id="sheetOverlay" class="sheet-overlay" onclick="toggleSheet()"></div>
 
         <div id="bottomSheet" class="bottom-sheet">
-            <div class="sheet-handle"></div>
+            <div class="sheet-handle" onclick="toggleSheet()"></div>
             <div class="sheet-content">
-                <div class="tab-item" onclick="changeTab('lavoro', this)">
-                    <svg viewBox="0 0 24 24"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-8 0h-4V4h4v2z"/></svg>
-                    <span class="app-name">Lavoro</span>
-                </div>
                 <div class="tab-item" onclick="changeTab('spesa', this)">
-                    <svg viewBox="0 0 24 24"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                    <div class="icon-box" style="margin-bottom:5px;">
+                        <svg viewBox="0 0 24 24" style="width:24px; fill:var(--success)"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                    </div>
                     <span class="app-name">Mia Spesa</span>
                 </div>
                 <div class="tab-item" onclick="openScanner()">
-                    <svg viewBox="0 0 24 24"><path d="M4 4h7V2H4c-1.1 0-2 .9-2 2v7h2V4zm6 9l-4 5h12l-3-4-2.03 2.71L10 13zm7-4.5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5.67 1.5 1.5 1.5 1.5-.67 1.5-1.5zM20 2h-7v2h7v7h2V4c0-1.1-.9-2-2-2zm0 18h-7v2h7c1.1 0 2-.9 2-2v-7h-2v7zM4 13H2v7c0 1.1.9 2 2 2h7v-2H4v-7z"/></svg>
-                    <span class="app-name">Scan Barcode</span>
+                    <div class="icon-box" style="margin-bottom:5px;">
+                        <svg viewBox="0 0 24 24" style="width:24px; fill:#333"><path d="M4 4h7V2H4c-1.1 0-2 .9-2 2v7h2V4zm6 9l-4 5h12l-3-4-2.03 2.71L10 13zm7-4.5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5.67 1.5 1.5 1.5 1.5-.67 1.5-1.5zM20 2h-7v2h7v7h2V4c0-1.1-.9-2-2-2zm0 18h-7v2h7c1.1 0 2-.9 2-2v-7h-2v7zM4 13H2v7c0 1.1.9 2 2 2h7v-2H4v-7z"/></svg>
+                    </div>
+                    <span class="app-name">Scan</span>
+                </div>
+                <div class="tab-item" onclick="changeTab('cerca', this)">
+                    <div class="icon-box" style="margin-bottom:5px;">
+                        <svg viewBox="0 0 24 24" style="width:24px; fill:var(--primary)"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                    </div>
+                    <span class="app-name">Cerca</span>
+                </div>
+                <div class="tab-item" onclick="changeTab('web', this)">
+                    <div class="icon-box" style="margin-bottom:5px;">
+                        <svg viewBox="0 0 24 24" style="width:24px; fill:#8e8e93"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                    </div>
+                    <span class="app-name">Web</span>
                 </div>
             </div>
         </div>
@@ -408,23 +443,19 @@
                 <svg viewBox="0 0 24 24"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/></svg>
                 <span>Tutti</span>
             </div>
-            <div class="tab-item" onclick="changeTab('web', this)">
-                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
-                <span>Web</span>
+            <div class="tab-item" onclick="changeTab('contatti', this)">
+                <svg viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                <span>Contatti</span>
+            </div>
+            <div class="tab-item" onclick="changeTab('lavoro', this)">
+                <svg viewBox="0 0 24 24"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-8 0h-4V4h4v2z"/></svg>
+                <span>Lavoro</span>
             </div>
             <div class="tab-item" onclick="changeTab('social', this)">
                 <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
                 <span>Social</span>
             </div>
-            <div class="tab-item" onclick="changeTab('contatti', this)">
-                <svg viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
-                <span>Contatti</span>
-            </div>
-            <div class="tab-item" onclick="changeTab('cerca', this)">
-                <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-                <span>Cerca</span>
-            </div>
-            <div class="tab-item" onclick="toggleSheet()">
+            <div class="tab-item" id="tab-altro" onclick="toggleSheet()">
                 <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
                 <span>Altro</span>
             </div>
