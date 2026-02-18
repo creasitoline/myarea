@@ -9,7 +9,7 @@
         :root { --primary: #007AFF; --bg: #f2f2f7; --success: #34C759; --danger: #FF3B30; }
         body { 
             font-family: -apple-system, sans-serif; 
-            background: #000; /* Fondo nero per non far vedere il caricamento */
+            background: #000; 
             margin: 0; 
             padding: 0; 
             color: white;
@@ -18,11 +18,9 @@
             overflow-y: auto;
         }
         
-        /* Contenitore Scanner */
         #reader { width: 100% !important; border: none !important; }
         #reader video { object-fit: cover !important; }
 
-        /* Pannello Risultati */
         .content-overlay {
             background: var(--bg);
             color: #333;
@@ -99,8 +97,6 @@
 
         async function onScanSuccess(decodedText) {
             if (navigator.vibrate) navigator.vibrate(100);
-            
-            // Fermiamo lo scanner per processare il prodotto
             await html5QrCode.stop();
             document.getElementById('status').innerText = "Prodotto rilevato! Ricerca in corso...";
             
@@ -111,13 +107,14 @@
                 currentScan = { 
                     name: "Prodotto Generico", 
                     brand: "Barcode: " + decodedText, 
-                    img: "https://via.placeholder.com/100?text=📦",
+                    img: "https://cdn-icons-png.flaticon.com/512/672/672431.png",
                     id: decodedText 
                 };
 
                 if (data.status === 1) {
                     currentScan.name = data.product.product_name || currentScan.name;
                     currentScan.brand = data.product.brands || currentScan.brand;
+                    // Prende l'immagine originale del prodotto
                     currentScan.img = data.product.image_url || currentScan.img;
                 }
 
@@ -150,16 +147,16 @@
 
             if(!price || !shop) { alert("Inserisci prezzo e negozio!"); return; }
 
-            // Invia i dati al file index.html principale
+            // MODIFICA QUI: Inviamo anche productImg alla index.html
             window.parent.postMessage({
                 type: 'qr-success',
                 code: currentScan.id,
                 productName: currentScan.name,
+                productImg: currentScan.img, // <--- Fondamentale per vedere la foto nella lista!
                 price: price,
                 shop: shop
             }, '*');
 
-            // Reset interfaccia per nuova scansione
             document.getElementById('productCard').style.display = 'none';
             document.getElementById('userPrice').value = "";
             document.getElementById('userShop').value = "";
@@ -183,7 +180,6 @@
             });
         }
 
-        // Avvio ritardato per evitare schermi neri durante transizione iframe
         setTimeout(startScanner, 500);
     </script>
 </body>
