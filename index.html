@@ -5,13 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>myArea - Digital Workspace</title>
     
-    <link rel="icon" type="image/png" href="icon.png?v=2">
-    <link rel="apple-touch-icon" href="icon.png?v=2">
-    <link rel="manifest" href="manifest.json?v=2">
-    
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-
     <script src="https://unpkg.com/html5-qrcode"></script>
 
     <script type="module">
@@ -33,385 +26,223 @@
         const db = getFirestore(app);
 
         let currentUser = null;
-        let userData = { myLinks: [], myWork: [], myShopping: [] }; // Aggiunto shopping
+        let userData = { myLinks: [], myWork: [], myShopping: [] };
         let currentTab = 'tutti';
-        let editIndex = null;
-        let pressTimer;
-        let searchTerm = "";
-        
-        let mediaRecorder;
-        let audioChunks = [];
-        let audioBase64 = null;
+        let html5QrCode = null;
 
+        // Icone Standard
         const waIcon = "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg";
         const callIcon = `<svg viewBox="0 0 24 24" fill="#007AFF"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>`;
-        const trashSVG = `<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>`;
-        const editSVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
 
-        async function loadData(uid) {
-            const docRef = doc(db, "users", uid);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) userData = docSnap.data();
-            else { userData = { myLinks: [], myWork: [], myShopping: [] }; await setDoc(docRef, userData); }
-            render();
-        }
-
-        async function syncCloud() {
-            if (!currentUser) return;
-            const docRef = doc(db, "users", currentUser.uid);
-            await setDoc(docRef, userData);
-        }
-
-        window.handleAuth = async () => {
-            const email = document.getElementById('email').value;
-            const pass = document.getElementById('passInput').value;
-            try {
-                await setPersistence(auth, browserLocalPersistence);
-                await signInWithEmailAndPassword(auth, email, pass);
-            } catch (e) { alert("Accesso fallito."); }
-        };
-
-        window.logout = () => signOut(auth);
-
-        onAuthStateChanged(auth, (user) => {
-            if (user) { 
-                currentUser = user; 
-                document.getElementById('welcomeScreen').style.display = 'none'; 
-                document.getElementById('mainApp').style.display = 'flex'; 
-                loadData(user.uid); 
-            } else { 
-                currentUser = null; 
-                document.getElementById('welcomeScreen').style.display = 'flex'; 
-                document.getElementById('mainApp').style.display = 'none'; 
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('loginScreen').style.display = 'none';
+                const docRef = doc(db, "users", user.uid);
+                const snap = await getDoc(docRef);
+                if (snap.exists()) userData = snap.data();
+                render();
+            } else {
+                document.getElementById('loginScreen').style.display = 'flex';
             }
         });
 
+        window.changeTab = (tab) => {
+            currentTab = tab;
+            // Stop scanner se attivo cambiando tab
+            if(html5QrCode && html5QrCode.isScanning) {
+                html5QrCode.stop().then(() => {
+                    document.getElementById('scannerWrapper').style.display = 'none';
+                });
+            }
+            toggleSheet(false);
+            render();
+        };
+
         window.render = () => {
-            const grid = document.getElementById('appGrid');
-            const workContainer = document.getElementById('workContainer');
-            const shopContainer = document.getElementById('shoppingContainer');
-            const searchBar = document.getElementById('searchBarContainer');
-            grid.innerHTML = ''; workContainer.innerHTML = ''; shopContainer.innerHTML = '';
+            const grid = document.getElementById('mainGrid');
+            const workArea = document.getElementById('workArea');
+            const shopArea = document.getElementById('shopArea');
+            
+            grid.style.display = (currentTab === 'tutti' || currentTab === 'web' || currentTab === 'social' || currentTab === 'contatti') ? 'grid' : 'none';
+            workArea.style.display = (currentTab === 'lavoro') ? 'block' : 'none';
+            shopArea.style.display = (currentTab === 'shopping') ? 'block' : 'none';
 
-            searchBar.style.display = currentTab === 'cerca' ? 'block' : 'none';
-            grid.style.display = (currentTab !== 'lavoro' && currentTab !== 'shopping') ? 'grid' : 'none';
-            workContainer.style.display = currentTab === 'lavoro' ? 'block' : 'none';
-            shopContainer.style.display = currentTab === 'shopping' ? 'block' : 'none';
+            grid.innerHTML = '';
+            let links = userData.myLinks || [];
+            if(currentTab !== 'tutti') links = links.filter(l => l.category === currentTab);
 
-            if(currentTab === 'lavoro') {
-                userData.myWork.forEach((w, i) => {
-                    const div = document.createElement('div');
-                    div.className = 'work-card';
-                    div.innerHTML = `
-                        <div class="work-info" onclick="editWork(${i})">
-                            <h4>${w.client}</h4>
-                            <p>${w.note}</p>
-                            ${w.audio ? `<audio controls src="${w.audio}" class="custom-audio-player"></audio>` : ''}
-                            <div class="work-meta">${w.date || '---'} • ${w.hours}h</div>
-                        </div>
-                        <div class="trash-btn" onclick="askDelete(${i}, 'work')">${trashSVG}</div>
-                    `;
-                    workContainer.appendChild(div);
-                });
-            } else if(currentTab === 'shopping') {
-                // Rendering prodotti salvati (come nel tuo esempio documenti)
-                if(!userData.myShopping || userData.myShopping.length === 0) {
-                    shopContainer.innerHTML = '<p style="text-align:center; color:gray; margin-top:20px;">Nessun acquisto salvato.</p>';
-                } else {
-                    userData.myShopping.forEach((s, i) => {
-                        const div = document.createElement('div');
-                        div.className = 'doc-item';
-                        div.innerHTML = `
-                            <img src="${s.img}">
-                            <div class="doc-details">
-                                <b>${s.name}</b>
-                                <span>${s.shop} - ${s.date}</span>
-                            </div>
-                            <div class="doc-price">€${parseFloat(s.price).toFixed(2)}</div>
-                            <div class="delete-btn" onclick="askDelete(${i}, 'shop')">×</div>
-                        `;
-                        shopContainer.appendChild(div);
-                    });
-                }
-            } else {
-                let filtered = userData.myLinks;
-                if (currentTab === 'contatti') filtered = userData.myLinks.filter(l => l.category === 'contatti' || l.category === 'whatsapp');
-                else if (currentTab !== 'tutti' && currentTab !== 'cerca') filtered = userData.myLinks.filter(l => l.category === currentTab);
-                
-                filtered.forEach((l) => {
-                    const idx = userData.myLinks.indexOf(l);
-                    const div = document.createElement('div');
-                    div.className = 'app-icon';
-                    let icon = l.category === 'whatsapp' ? `<img src="${waIcon}">` : l.category === 'contatti' ? callIcon : `<img src="https://www.google.com/s2/favicons?sz=128&domain=${l.url}">`;
-                    div.innerHTML = `<div class="context-menu" id="menu-${idx}"><div class="context-item" onclick="event.stopPropagation(); editLink(${idx})">${editSVG} Modifica</div><div class="context-item" style="color:var(--danger)" onclick="event.stopPropagation(); askDelete(${idx}, 'link')">${trashSVG} Elimina</div></div><div class="icon-box">${icon}</div><span class="app-name">${l.title}</span>`;
-                    div.onclick = () => { if(document.getElementById(`menu-${idx}`).style.display === 'flex') { hideAllMenus(); return; } if (l.url.startsWith('tel:')) window.location.href = l.url; else window.open(l.url, '_blank'); };
-                    div.onmousedown = div.ontouchstart = () => { pressTimer = setTimeout(() => { hideAllMenus(); document.getElementById(`menu-${idx}`).style.display = 'flex'; }, 700); };
-                    div.onmouseup = div.ontouchend = () => clearTimeout(pressTimer);
-                    grid.appendChild(div);
-                });
-            }
+            links.forEach((l, i) => {
+                const div = document.createElement('div');
+                div.className = 'app-icon';
+                let icon = l.category === 'whatsapp' ? `<img src="${waIcon}">` : l.category === 'contatti' ? callIcon : `<img src="https://www.google.com/s2/favicons?sz=128&domain=${l.url}">`;
+                div.innerHTML = `<div class="icon-box">${icon}</div><span class="app-name">${l.title}</span>`;
+                div.onclick = () => window.open(l.url, '_blank');
+                grid.appendChild(div);
+            });
+
+            // Render Shopping
+            const shopList = document.getElementById('shopList');
+            shopList.innerHTML = (userData.myShopping || []).map((s, i) => `
+                <div class="shop-item">
+                    <img src="${s.img}">
+                    <div style="flex:1"><b>${s.name}</b><br><small>${s.shop}</small></div>
+                    <div style="color:var(--success); font-weight:bold">€${s.price}</div>
+                    <div onclick="deleteShop(${i})" style="color:red; margin-left:10px">×</div>
+                </div>
+            `).join('');
         };
 
-        // --- INTEGRAZIONE SCANNER FUNZIONANTE ---
-        let html5QrCode = null;
-
-        window.openShoppingScanner = () => {
-            toggleSheet();
-            currentTab = 'shopping';
-            render();
-            document.getElementById('scannerSection').style.display = 'block';
+        window.startScan = () => {
+            document.getElementById('scannerWrapper').style.display = 'block';
             if(!html5QrCode) html5QrCode = new Html5Qrcode("reader");
-            html5QrCode.start({ facingMode: "environment" }, { fps: 15, qrbox: 250 }, onScanSuccess);
+            html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, async (code) => {
+                html5QrCode.stop();
+                document.getElementById('scannerStatus').innerText = "Cerco prodotto...";
+                const res = await fetch(`https://it.openfoodfacts.org/api/v0/product/${code}.json`);
+                const data = await res.json();
+                if(data.status === 1) {
+                    window.tempProd = { name: data.product.product_name, img: data.product.image_url || '' };
+                    document.getElementById('prodResult').style.display = 'block';
+                    document.getElementById('resTitle').innerText = window.tempProd.name;
+                }
+            });
         };
 
-        async function onScanSuccess(decodedText) {
-            html5QrCode.stop();
-            document.getElementById('statusLabel').innerText = "Identificazione...";
-            try {
-                const response = await fetch(`https://it.openfoodfacts.org/api/v0/product/${decodedText}.json`);
-                const data = await response.json();
-                let p = { name: "Prodotto", brand: "Codice: "+decodedText, img: "https://via.placeholder.com/100", barcode: decodedText };
-                if (data.status === 1) {
-                    p.name = data.product.product_name || p.name;
-                    p.brand = data.product.brands || p.brand;
-                    p.img = data.product.image_url || p.img;
-                }
-                showProductResult(p);
-            } catch (e) { alert("Errore connessione"); restartScanner(); }
-        }
-
-        function showProductResult(p) {
-            document.getElementById('productCard').style.display = 'block';
-            document.getElementById('resTitle').innerText = p.name;
-            document.getElementById('resImg').src = p.img;
-            window.currentScan = p;
-        }
-
-        window.saveShopping = async () => {
-            const price = document.getElementById('userPrice').value;
-            const shop = document.getElementById('userShop').value;
-            if(!price || !shop) return alert("Dati mancanti");
-            
-            const item = { ...window.currentScan, price, shop, date: new Date().toLocaleDateString() };
-            if(!userData.myShopping) userData.myShopping = [];
-            userData.myShopping.unshift(item);
-            
-            await syncCloud();
-            document.getElementById('productCard').style.display = 'none';
-            document.getElementById('scannerSection').style.display = 'none';
+        window.saveScan = async () => {
+            const p = document.getElementById('pPrice').value;
+            const s = document.getElementById('pShop').value;
+            if(!p || !s) return alert("Inserisci dati");
+            userData.myShopping.unshift({...window.tempProd, price: p, shop: s, date: new Date().toLocaleDateString()});
+            await setDoc(doc(db, "users", currentUser.uid), userData);
+            document.getElementById('scannerWrapper').style.display = 'none';
             render();
         };
 
-        window.restartScanner = () => {
-            document.getElementById('productCard').style.display = 'none';
-            html5QrCode.start({ facingMode: "environment" }, { fps: 15, qrbox: 250 }, onScanSuccess);
+        window.toggleSheet = (show) => {
+            const s = document.getElementById('sheet');
+            s.style.transform = show ? 'translateY(0)' : 'translateY(100%)';
         };
 
-        // --- FINE SCANNER ---
-
-        window.toggleSheet = () => {
-            document.getElementById('bottomSheet').classList.toggle('open');
-            document.getElementById('sheetOverlay').classList.toggle('active');
+        window.handleLogin = () => {
+            const e = document.getElementById('email').value;
+            const p = document.getElementById('pass').value;
+            signInWithEmailAndPassword(auth, e, p);
         };
-
-        window.changeTab = (tab, el) => { 
-            currentTab = tab; 
-            document.querySelectorAll('.tab-item').forEach(i => i.classList.remove('active')); 
-            if(el) el.classList.add('active'); 
-            document.getElementById('scannerSection').style.display = 'none';
-            if(html5QrCode) html5QrCode.stop();
-            if(tab !== 'altro') {
-                document.getElementById('bottomSheet').classList.remove('open');
-                document.getElementById('sheetOverlay').classList.remove('active');
-            }
-            render(); 
-        };
-
-        window.saveData = async () => {
-            const type = document.getElementById('typeSelector').value;
-            if(type === 'link') {
-                const name = document.getElementById('siteName').value; let url = document.getElementById('siteUrl').value; const cat = document.getElementById('siteCategory').value;
-                if(name && url) {
-                    const item = { title: name, url: url, category: cat };
-                    if(editIndex !== null) userData.myLinks[editIndex] = item; else userData.myLinks.push(item);
-                }
-            } else {
-                const work = { client: document.getElementById('workClient').value, note: document.getElementById('workNote').value, hours: document.getElementById('workHours').value, date: document.getElementById('workDate').value, audio: audioBase64 };
-                if(work.client) { if(editIndex !== null) userData.myWork[editIndex] = work; else userData.myWork.unshift(work); }
-            }
-            closeModal(); render(); await syncCloud();
-        };
-
-        window.askDelete = (index, type) => {
-            event.stopPropagation();
-            if(confirm("Eliminare questo elemento?")) {
-                if(type === 'work') userData.myWork.splice(index, 1); 
-                else if(type === 'shop') userData.myShopping.splice(index, 1);
-                else userData.myLinks.splice(index, 1);
-                render(); syncCloud();
-            }
-        };
-
-        window.closeModal = () => document.getElementById('addModal').style.display = 'none';
-        window.openAddModal = () => { editIndex = null; document.getElementById('addModal').style.display = 'block'; };
-        window.toggleFields = () => {
-            const isLink = document.getElementById('typeSelector').value === 'link'; 
-            document.getElementById('linkFields').style.display = isLink ? 'block' : 'none'; 
-            document.getElementById('workFields').style.display = isLink ? 'none' : 'block'; 
-        };
-        window.hideAllMenus = () => document.querySelectorAll('.context-menu').forEach(m => m.style.display = 'none');
     </script>
 
     <style>
-        :root { --primary: #007AFF; --bg: #f2f2f7; --work: #FF9500; --danger: #FF3B30; --success: #34C759; }
-        body, html { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: var(--bg); height: 100%; overflow: hidden; }
+        :root { --primary: #007AFF; --bg: #f2f2f7; --success: #34C759; }
+        body { margin: 0; font-family: -apple-system, sans-serif; background: var(--bg); overflow: hidden; }
         
-        /* HEADER & CONTENT */
-        .header { background: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; }
-        .header img { height: 35px; }
-        .content { flex: 1; overflow-y: auto; padding: 15px 15px 140px 15px; height: calc(100vh - 120px); }
-        
-        /* GRID ICONE ORIGINALI */
-        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
-        .app-icon { display: flex; flex-direction: column; align-items: center; position: relative; }
-        .icon-box { width: 60px; height: 60px; border-radius: 15px; background: white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-        .icon-box img, .icon-box svg { width: 35px; height: 35px; }
-        .app-name { font-size: 11px; margin-top: 6px; color: #333; text-align: center; }
+        .nav-top { background: white; padding: 15px; display: flex; justify-content: space-between; border-bottom: 1px solid #ddd; }
+        .main-content { height: calc(100vh - 140px); overflow-y: auto; padding: 15px; }
 
-        /* SCANNER STYLE (TUO ESEMPIO) */
-        #reader { width: 100%; border-radius: 20px; overflow: hidden; background: #000; margin-top: 10px; }
-        .doc-item { background: white; padding: 12px; border-radius: 15px; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; position: relative; }
-        .doc-item img { width: 50px; height: 50px; object-fit: contain; }
-        .doc-details { flex: 1; }
-        .doc-details b { display: block; font-size: 14px; }
-        .doc-details span { font-size: 11px; color: #8e8e93; }
-        .doc-price { color: var(--success); font-weight: bold; }
-        .delete-btn { color: var(--danger); font-size: 20px; font-weight: bold; margin-left: 10px; }
+        /* GRIGLIA ICONE - RIPRISTINATA */
+        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px 10px; }
+        .app-icon { display: flex; flex-direction: column; align-items: center; }
+        .icon-box { width: 60px; height: 60px; background: white; border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.08); overflow: hidden; }
+        .icon-box img { width: 100%; height: 100%; object-fit: cover; }
+        .icon-box svg { width: 32px; height: 32px; }
+        .app-name { font-size: 11px; margin-top: 5px; color: #333; text-align: center; width: 70px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-        /* MODALE RISULTATO SCAN */
-        .card-result { background: white; padding: 15px; border-radius: 20px; margin-top: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        /* SHOPPING LIST */
+        .shop-item { background: white; padding: 10px; border-radius: 12px; display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .shop-item img { width: 40px; height: 40px; object-fit: contain; }
 
-        /* NAV BAR ORIGINALE */
-        .tab-bar { position: fixed; bottom: 0; width: 100%; background: white; display: flex; padding: 10px 0 30px 0; border-top: 1px solid #ddd; z-index: 2000; }
-        .tab-item { flex: 1; text-align: center; color: #8e8e93; font-size: 10px; }
-        .tab-item.active { color: var(--primary); }
-        .tab-item svg { width: 24px; height: 24px; display: block; margin: 0 auto 4px; fill: currentColor; }
+        /* BARRA NAVIGAZIONE */
+        .tab-bar { position: fixed; bottom: 0; width: 100%; background: white; display: flex; padding: 10px 0 25px; border-top: 1px solid #ddd; }
+        .tab { flex: 1; text-align: center; font-size: 10px; color: #8e8e93; }
+        .tab svg { width: 24px; height: 24px; display: block; margin: 0 auto 2px; }
 
-        /* ALTRI ELEMENTI UI */
-        .bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 20px 20px 0 0; z-index: 1500; transform: translateY(100%); transition: 0.3s; }
-        .bottom-sheet.open { transform: translateY(-70px); }
-        .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; z-index: 1400; }
-        .sheet-overlay.active { display: block; }
-        .login-input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid #ddd; box-sizing: border-box; }
-        .btn-action { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; width: 100%; font-weight: bold; }
-        #welcomeScreen { position: fixed; inset: 0; background: #007AFF; z-index: 5000; display: flex; align-items: center; justify-content: center; }
-        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 25px; width: 85%; z-index: 3000; }
-        .add-btn { position: fixed; bottom: 100px; right: 20px; width: 60px; height: 60px; background: var(--primary); color: white; border-radius: 50%; border: none; font-size: 35px; z-index: 999; }
+        /* SCANNER OVERLAY */
+        #scannerWrapper { position: absolute; top:0; left:0; width:100%; background:white; z-index: 100; display:none; padding: 20px; box-sizing: border-box; }
+        #reader { width: 100%; border-radius: 15px; overflow: hidden; }
+
+        /* MODALI & SHEET */
+        .sheet { position: fixed; bottom: 0; width: 100%; background: white; transition: 0.3s; transform: translateY(100%); z-index: 1000; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); }
+        .login-screen { position: fixed; inset: 0; background: var(--primary); z-index: 2000; display: flex; align-items: center; justify-content: center; flex-direction: column; color: white; }
+        input { width: 100%; padding: 12px; margin: 5px 0; border-radius: 10px; border: 1px solid #ddd; box-sizing: border-box; }
     </style>
 </head>
-<body onclick="hideAllMenus()">
+<body>
 
-    <div id="welcomeScreen">
-        <div style="background:white; padding:30px; border-radius:25px; text-align:center; width:80%;">
-            <h2 style="color:var(--primary)">myArea</h2>
-            <input type="email" id="email" class="login-input" placeholder="Email">
-            <input type="password" id="passInput" class="login-input" placeholder="Password">
-            <button class="btn-action" onclick="handleAuth()">ACCEDI</button>
+    <div id="loginScreen" class="login-screen">
+        <h2>myArea</h2>
+        <div style="width: 80%;">
+            <input type="email" id="email" placeholder="Email">
+            <input type="password" id="pass" placeholder="Password">
+            <button onclick="handleLogin()" style="width:100%; padding:15px; border-radius:10px; border:none; background:white; color:var(--primary); font-weight:bold; margin-top:10px;">ACCEDI</button>
         </div>
     </div>
 
-    <div id="mainApp">
-        <div class="header">
-            <h3 style="margin:0; color:var(--primary)">myArea</h3>
-            <div onclick="logout()" style="color:var(--danger); font-size:12px; font-weight:bold">ESCI</div>
-        </div>
+    <div class="nav-top">
+        <b style="color:var(--primary)">myArea</b>
+        <span onclick="location.reload()" style="font-size: 12px; color: #8e8e93;">Aggiorna</span>
+    </div>
 
-        <div class="content">
-            <div id="scannerSection" style="display:none; margin-bottom:20px;">
+    <div class="main-content">
+        <div id="mainGrid" class="grid"></div>
+
+        <div id="workArea" style="display:none">
+            <h3>Registro Ore</h3>
+            </div>
+
+        <div id="shopArea" style="display:none">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>Shopping Lab</h3>
+                <button onclick="startScan()" style="background:var(--success); color:white; border:none; padding:8px 15px; border-radius:8px; font-weight:bold">+ SCAN</button>
+            </div>
+
+            <div id="scannerWrapper">
                 <div id="reader"></div>
-                <p id="statusLabel" style="text-align:center; color:gray; font-size:12px;">Inquadra codice a barre</p>
-                
-                <div id="productCard" class="card-result" style="display:none;">
-                    <div style="display:flex; gap:10px; align-items:center;">
-                        <img id="resImg" style="width:60px; height:60px; object-fit:contain;">
-                        <h4 id="resTitle" style="margin:0;">Prodotto</h4>
-                    </div>
-                    <input type="number" id="userPrice" class="login-input" placeholder="Prezzo €">
-                    <input type="text" id="userShop" class="login-input" placeholder="Negozio">
-                    <button class="btn-action" onclick="saveShopping()">SALVA ACQUISTO</button>
-                    <button onclick="restartScanner()" style="width:100%; background:none; border:none; color:var(--primary); margin-top:10px;">Riprova Scan</button>
+                <p id="scannerStatus" style="text-align:center">Inquadra il codice</p>
+                <div id="prodResult" style="display:none; border:1px solid #ddd; padding:15px; border-radius:12px;">
+                    <b id="resTitle"></b>
+                    <input type="number" id="pPrice" placeholder="Prezzo €">
+                    <input type="text" id="pShop" placeholder="Negozio">
+                    <button onclick="saveScan()" style="width:100%; background:var(--primary); color:white; border:none; padding:12px; border-radius:10px; margin-top:10px;">SALVA</button>
                 </div>
+                <button onclick="changeTab('shopping')" style="width:100%; background:none; border:none; color:red; margin-top:15px;">Annulla</button>
             </div>
 
-            <div class="grid" id="appGrid"></div>
-            <div id="workContainer" style="display:none"></div>
-            <div id="shoppingContainer" style="display:none"></div>
-        </div>
-
-        <button class="add-btn" onclick="openAddModal()">+</button>
-
-        <div id="sheetOverlay" class="sheet-overlay" onclick="toggleSheet()"></div>
-        <div id="bottomSheet" class="bottom-sheet">
-            <div style="width:40px; height:5px; background:#ddd; border-radius:5px; margin:10px auto;"></div>
-            <div style="padding: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px;">
-                <div class="tab-item" onclick="changeTab('lavoro', this)">
-                    <svg viewBox="0 0 24 24"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-8 0h-4V4h4v2z"/></svg>
-                    <span>Lavoro</span>
-                </div>
-                <div class="tab-item" onclick="openShoppingScanner()">
-                    <svg viewBox="0 0 24 24" fill="var(--success)"><path d="M4 4h7V2H4c-1.1 0-2 .9-2 2v7h2V4zm6 9l-4 4h12l-4-4-3 3-1-3zM13 2v2h7v7h2V4c0-1.1-.9-2-2-2h-7z"/></svg>
-                    <span style="color:var(--success)">Scanner</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="tab-bar">
-            <div class="tab-item active" onclick="changeTab('tutti', this)">
-                <svg viewBox="0 0 24 24"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4z"/></svg>
-                <span>Tutti</span>
-            </div>
-            <div class="tab-item" onclick="changeTab('web', this)">
-                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>
-                <span>Web</span>
-            </div>
-            <div class="tab-item" onclick="changeTab('social', this)">
-                <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3z"/></svg>
-                <span>Social</span>
-            </div>
-            <div class="tab-item" onclick="changeTab('contatti', this)">
-                <svg viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2z"/></svg>
-                <span>Contatti</span>
-            </div>
-            <div class="tab-item" onclick="toggleSheet()">
-                <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
-                <span>Altro</span>
-            </div>
+            <div id="shopList" style="margin-top:20px"></div>
         </div>
     </div>
 
-    <div class="modal" id="addModal">
-        <select id="typeSelector" onchange="toggleFields()" class="login-input">
-            <option value="link">Link / Contatto</option>
-            <option value="lavoro">Lavoro (Ore)</option>
-        </select>
-        <div id="linkFields">
-            <input type="text" id="siteName" class="login-input" placeholder="Nome">
-            <input type="text" id="siteUrl" class="login-input" placeholder="URL o Numero">
-            <select id="siteCategory" class="login-input">
-                <option value="web">Sito Web</option>
-                <option value="social">Social</option>
-                <option value="whatsapp">WhatsApp</option>
-                <option value="contatti">Chiamata</option>
-            </select>
+    <div id="sheet" class="sheet">
+        <div style="width:40px; height:4px; background:#ddd; margin:0 auto 15px; border-radius:10px;"></div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+            <div class="app-icon" onclick="changeTab('lavoro')">
+                <div class="icon-box" style="background:#FF9500; color:white;">💼</div>
+                <span>Lavoro</span>
+            </div>
+            <div class="app-icon" onclick="changeTab('shopping')">
+                <div class="icon-box" style="background:#34C759; color:white;">🛒</div>
+                <span>Shopping</span>
+            </div>
         </div>
-        <div id="workFields" style="display:none">
-            <input type="text" id="workClient" class="login-input" placeholder="Cliente">
-            <input type="text" id="workNote" class="login-input" placeholder="Note">
-            <input type="number" id="workHours" class="login-input" placeholder="Ore">
-            <input type="date" id="workDate" class="login-input">
-        </div>
-        <button class="btn-action" onclick="saveData()">SALVA</button>
-        <button onclick="closeModal()" style="width:100%; border:none; background:none; color:gray; margin-top:10px;">Annulla</button>
+        <button onclick="toggleSheet(false)" style="width:100%; margin-top:20px; padding:10px; border:none; background:#f2f2f7; border-radius:10px;">Chiudi</button>
     </div>
+
+    <div class="tab-bar">
+        <div class="tab" onclick="changeTab('tutti')">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+            Home
+        </div>
+        <div class="tab" onclick="changeTab('web')">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+            Web
+        </div>
+        <div class="tab" onclick="changeTab('social')">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5s-3 1.34-3 3 1.34 3 3 3z"/></svg>
+            Social
+        </div>
+        <div class="tab" onclick="toggleSheet(true)">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+            Altro
+        </div>
+    </div>
+
 </body>
 </html>
