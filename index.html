@@ -12,7 +12,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -33,7 +33,7 @@
         const db = getFirestore(app);
 
         let currentUser = null;
-        let userData = { myLinks: [], myWork: [] };
+        let userData = { myLinks: [], myWork: [], myShopping: [] }; // Aggiunto shopping
         let currentTab = 'tutti';
         let editIndex = null;
         let pressTimer;
@@ -52,7 +52,7 @@
             const docRef = doc(db, "users", uid);
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) userData = docSnap.data();
-            else { userData = { myLinks: [], myWork: [] }; await setDoc(docRef, userData); }
+            else { userData = { myLinks: [], myWork: [], myShopping: [] }; await setDoc(docRef, userData); }
             render();
         }
 
@@ -86,20 +86,19 @@
             }
         });
 
-        window.filterItems = (val) => {
-            searchTerm = val.toLowerCase();
-            render();
-        };
-
         window.render = () => {
             const grid = document.getElementById('appGrid');
             const workContainer = document.getElementById('workContainer');
+            const shopContainer = document.getElementById('shoppingContainer');
             const searchBar = document.getElementById('searchBarContainer');
-            grid.innerHTML = ''; workContainer.innerHTML = '';
+            grid.innerHTML = ''; workContainer.innerHTML = ''; shopContainer.innerHTML = '';
+
             searchBar.style.display = currentTab === 'cerca' ? 'block' : 'none';
+            grid.style.display = (currentTab !== 'lavoro' && currentTab !== 'shopping') ? 'grid' : 'none';
+            workContainer.style.display = currentTab === 'lavoro' ? 'block' : 'none';
+            shopContainer.style.display = currentTab === 'shopping' ? 'block' : 'none';
 
             if(currentTab === 'lavoro') {
-                grid.style.display = 'none'; workContainer.style.display = 'block';
                 userData.myWork.forEach((w, i) => {
                     const div = document.createElement('div');
                     div.className = 'work-card';
@@ -114,15 +113,30 @@
                     `;
                     workContainer.appendChild(div);
                 });
-            } else {
-                grid.style.display = 'grid'; workContainer.style.display = 'none';
-                let filtered = userData.myLinks;
-                if (currentTab === 'contatti') {
-                    filtered = userData.myLinks.filter(l => l.category === 'contatti' || l.category === 'whatsapp');
-                } else if (currentTab !== 'tutti' && currentTab !== 'cerca') {
-                    filtered = userData.myLinks.filter(l => l.category === currentTab);
+            } else if(currentTab === 'shopping') {
+                // Rendering prodotti salvati (come nel tuo esempio documenti)
+                if(!userData.myShopping || userData.myShopping.length === 0) {
+                    shopContainer.innerHTML = '<p style="text-align:center; color:gray; margin-top:20px;">Nessun acquisto salvato.</p>';
+                } else {
+                    userData.myShopping.forEach((s, i) => {
+                        const div = document.createElement('div');
+                        div.className = 'doc-item';
+                        div.innerHTML = `
+                            <img src="${s.img}">
+                            <div class="doc-details">
+                                <b>${s.name}</b>
+                                <span>${s.shop} - ${s.date}</span>
+                            </div>
+                            <div class="doc-price">€${parseFloat(s.price).toFixed(2)}</div>
+                            <div class="delete-btn" onclick="askDelete(${i}, 'shop')">×</div>
+                        `;
+                        shopContainer.appendChild(div);
+                    });
                 }
-                if (searchTerm !== "") filtered = filtered.filter(l => l.title.toLowerCase().includes(searchTerm));
+            } else {
+                let filtered = userData.myLinks;
+                if (currentTab === 'contatti') filtered = userData.myLinks.filter(l => l.category === 'contatti' || l.category === 'whatsapp');
+                else if (currentTab !== 'tutti' && currentTab !== 'cerca') filtered = userData.myLinks.filter(l => l.category === currentTab);
                 
                 filtered.forEach((l) => {
                     const idx = userData.myLinks.indexOf(l);
@@ -138,43 +152,63 @@
             }
         };
 
-        // --- LOGICA SCANNER ---
-        window.startScan = () => {
+        // --- INTEGRAZIONE SCANNER FUNZIONANTE ---
+        let html5QrCode = null;
+
+        window.openShoppingScanner = () => {
             toggleSheet();
-            document.getElementById('scannerOverlay').style.display = 'flex';
-            Quagga.init({
-                inputStream: { name: "Live", type: "LiveStream", target: document.querySelector('#scannerView'), constraints: { facingMode: "environment" } },
-                decoder: { readers: ["ean_reader", "ean_8_reader"] }
-            }, (err) => {
-                if (err) { alert("Errore camera: " + err); return; }
-                Quagga.start();
-            });
-
-            Quagga.onDetected(async (data) => {
-                Quagga.stop();
-                const code = data.codeResult.code;
-                if (navigator.vibrate) navigator.vibrate(100);
-                
-                document.getElementById('scanResult').style.display = 'block';
-                document.getElementById('resTitle').innerText = "Codice: " + code;
-                
-                try {
-                    const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
-                    const json = await res.json();
-                    if(json.status === 1) {
-                        document.getElementById('resTitle').innerText = json.product.product_name || code;
-                    }
-                } catch (e) {}
-            });
+            currentTab = 'shopping';
+            render();
+            document.getElementById('scannerSection').style.display = 'block';
+            if(!html5QrCode) html5QrCode = new Html5Qrcode("reader");
+            html5QrCode.start({ facingMode: "environment" }, { fps: 15, qrbox: 250 }, onScanSuccess);
         };
 
-        window.closeScanner = () => {
-            Quagga.stop();
-            document.getElementById('scannerOverlay').style.display = 'none';
-            document.getElementById('scanResult').style.display = 'none';
+        async function onScanSuccess(decodedText) {
+            html5QrCode.stop();
+            document.getElementById('statusLabel').innerText = "Identificazione...";
+            try {
+                const response = await fetch(`https://it.openfoodfacts.org/api/v0/product/${decodedText}.json`);
+                const data = await response.json();
+                let p = { name: "Prodotto", brand: "Codice: "+decodedText, img: "https://via.placeholder.com/100", barcode: decodedText };
+                if (data.status === 1) {
+                    p.name = data.product.product_name || p.name;
+                    p.brand = data.product.brands || p.brand;
+                    p.img = data.product.image_url || p.img;
+                }
+                showProductResult(p);
+            } catch (e) { alert("Errore connessione"); restartScanner(); }
+        }
+
+        function showProductResult(p) {
+            document.getElementById('productCard').style.display = 'block';
+            document.getElementById('resTitle').innerText = p.name;
+            document.getElementById('resImg').src = p.img;
+            window.currentScan = p;
+        }
+
+        window.saveShopping = async () => {
+            const price = document.getElementById('userPrice').value;
+            const shop = document.getElementById('userShop').value;
+            if(!price || !shop) return alert("Dati mancanti");
+            
+            const item = { ...window.currentScan, price, shop, date: new Date().toLocaleDateString() };
+            if(!userData.myShopping) userData.myShopping = [];
+            userData.myShopping.unshift(item);
+            
+            await syncCloud();
+            document.getElementById('productCard').style.display = 'none';
+            document.getElementById('scannerSection').style.display = 'none';
+            render();
         };
 
-        // --- ALTRE FUNZIONI ---
+        window.restartScanner = () => {
+            document.getElementById('productCard').style.display = 'none';
+            html5QrCode.start({ facingMode: "environment" }, { fps: 15, qrbox: 250 }, onScanSuccess);
+        };
+
+        // --- FINE SCANNER ---
+
         window.toggleSheet = () => {
             document.getElementById('bottomSheet').classList.toggle('open');
             document.getElementById('sheetOverlay').classList.toggle('active');
@@ -184,6 +218,8 @@
             currentTab = tab; 
             document.querySelectorAll('.tab-item').forEach(i => i.classList.remove('active')); 
             if(el) el.classList.add('active'); 
+            document.getElementById('scannerSection').style.display = 'none';
+            if(html5QrCode) html5QrCode.stop();
             if(tab !== 'altro') {
                 document.getElementById('bottomSheet').classList.remove('open');
                 document.getElementById('sheetOverlay').classList.remove('active');
@@ -191,37 +227,11 @@
             render(); 
         };
 
-        window.toggleRecording = async () => {
-            const btn = document.getElementById('recordBtn');
-            const status = document.getElementById('audioStatus');
-            if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorder = new MediaRecorder(stream);
-                    audioChunks = [];
-                    mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
-                    mediaRecorder.onstop = () => {
-                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                        const reader = new FileReader();
-                        reader.readAsDataURL(audioBlob);
-                        reader.onloadend = () => { audioBase64 = reader.result; status.innerText = "✅ Audio pronto"; status.style.color = "var(--success)"; };
-                    };
-                    mediaRecorder.start();
-                    btn.innerText = "🛑 FERMA"; btn.style.background = "var(--danger)";
-                } catch (err) { alert("Attiva il microfono."); }
-            } else {
-                mediaRecorder.stop();
-                btn.innerText = "🎤 REGISTRA"; btn.style.background = "var(--primary)";
-            }
-        };
-
         window.saveData = async () => {
             const type = document.getElementById('typeSelector').value;
             if(type === 'link') {
                 const name = document.getElementById('siteName').value; let url = document.getElementById('siteUrl').value; const cat = document.getElementById('siteCategory').value;
                 if(name && url) {
-                    if(cat === 'whatsapp' && !url.startsWith('http')) url = 'https://wa.me/' + url.replace(/\D/g,'');
-                    if(cat === 'contatti' && !url.startsWith('tel:')) url = 'tel:' + url.replace(/\s/g, '');
                     const item = { title: name, url: url, category: cat };
                     if(editIndex !== null) userData.myLinks[editIndex] = item; else userData.myLinks.push(item);
                 }
@@ -233,83 +243,77 @@
         };
 
         window.askDelete = (index, type) => {
-            event.stopPropagation(); hideAllMenus();
-            document.getElementById('deleteOverlay').style.display = 'flex';
-            document.getElementById('confirmDelete').onclick = async () => {
-                if(type === 'work') userData.myWork.splice(index, 1); else userData.myLinks.splice(index, 1);
-                document.getElementById('deleteOverlay').style.display = 'none';
-                render(); await syncCloud();
-            };
+            event.stopPropagation();
+            if(confirm("Eliminare questo elemento?")) {
+                if(type === 'work') userData.myWork.splice(index, 1); 
+                else if(type === 'shop') userData.myShopping.splice(index, 1);
+                else userData.myLinks.splice(index, 1);
+                render(); syncCloud();
+            }
         };
 
-        window.hideAllMenus = () => document.querySelectorAll('.context-menu').forEach(m => m.style.display = 'none');
-        window.openAddModal = () => { editIndex = null; audioBase64 = null; document.getElementById('addModal').style.display = 'block'; };
         window.closeModal = () => document.getElementById('addModal').style.display = 'none';
-        window.toggleFields = () => { 
+        window.openAddModal = () => { editIndex = null; document.getElementById('addModal').style.display = 'block'; };
+        window.toggleFields = () => {
             const isLink = document.getElementById('typeSelector').value === 'link'; 
             document.getElementById('linkFields').style.display = isLink ? 'block' : 'none'; 
             document.getElementById('workFields').style.display = isLink ? 'none' : 'block'; 
         };
-        window.editLink = (index) => { hideAllMenus(); editIndex = index; const l = userData.myLinks[index]; document.getElementById('typeSelector').value = 'link'; toggleFields(); document.getElementById('siteName').value = l.title; document.getElementById('siteUrl').value = l.url; document.getElementById('siteCategory').value = l.category; document.getElementById('addModal').style.display = 'block'; };
-        window.editWork = (index) => { editIndex = index; const w = userData.myWork[index]; document.getElementById('typeSelector').value = 'lavoro'; toggleFields(); document.getElementById('workClient').value = w.client; document.getElementById('workNote').value = w.note; document.getElementById('workHours').value = w.hours; document.getElementById('workDate').value = w.date; audioBase64 = w.audio || null; document.getElementById('addModal').style.display = 'block'; };
+        window.hideAllMenus = () => document.querySelectorAll('.context-menu').forEach(m => m.style.display = 'none');
     </script>
 
     <style>
         :root { --primary: #007AFF; --bg: #f2f2f7; --work: #FF9500; --danger: #FF3B30; --success: #34C759; }
         body, html { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: var(--bg); height: 100%; overflow: hidden; }
         
-        /* SCANNER FULL SCREEN */
-        #scannerOverlay { position: fixed; inset: 0; background: black; z-index: 9999; display: none; flex-direction: column; }
-        #scannerView { width: 100%; height: 100%; position: relative; }
-        #scannerView video { width: 100%; height: 100%; object-fit: cover; }
-        .scanner-laser { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80%; height: 2px; background: red; box-shadow: 0 0 10px red; animation: scan 2s infinite; }
-        @keyframes scan { 0%, 100% { top: 30%; } 50% { top: 70%; } }
-        .close-scan { position: absolute; top: 40px; right: 20px; color: white; font-size: 30px; z-index: 10001; }
-        .scan-result-box { position: fixed; bottom: 0; background: white; width: 100%; padding: 25px; border-radius: 20px 20px 0 0; display: none; z-index: 10000; box-sizing: border-box; }
-
-        /* UI GENERALE */
-        #welcomeScreen { position: fixed; inset: 0; background: #007AFF; display: flex; align-items: center; justify-content: center; z-index: 1000; }
-        .login-card { background: white; padding: 40px 30px; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; }
-        .login-input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid #ddd; font-size: 16px; box-sizing: border-box; }
-        #mainApp { display: none; height: 100%; flex-direction: column; }
+        /* HEADER & CONTENT */
         .header { background: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; }
         .header img { height: 35px; }
-        .content { flex: 1; overflow-y: auto; padding: 15px 15px 140px 15px; }
+        .content { flex: 1; overflow-y: auto; padding: 15px 15px 140px 15px; height: calc(100vh - 120px); }
+        
+        /* GRID ICONE ORIGINALI */
         .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
         .app-icon { display: flex; flex-direction: column; align-items: center; position: relative; }
         .icon-box { width: 60px; height: 60px; border-radius: 15px; background: white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
         .icon-box img, .icon-box svg { width: 35px; height: 35px; }
         .app-name { font-size: 11px; margin-top: 6px; color: #333; text-align: center; }
+
+        /* SCANNER STYLE (TUO ESEMPIO) */
+        #reader { width: 100%; border-radius: 20px; overflow: hidden; background: #000; margin-top: 10px; }
+        .doc-item { background: white; padding: 12px; border-radius: 15px; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; position: relative; }
+        .doc-item img { width: 50px; height: 50px; object-fit: contain; }
+        .doc-details { flex: 1; }
+        .doc-details b { display: block; font-size: 14px; }
+        .doc-details span { font-size: 11px; color: #8e8e93; }
+        .doc-price { color: var(--success); font-weight: bold; }
+        .delete-btn { color: var(--danger); font-size: 20px; font-weight: bold; margin-left: 10px; }
+
+        /* MODALE RISULTATO SCAN */
+        .card-result { background: white; padding: 15px; border-radius: 20px; margin-top: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+
+        /* NAV BAR ORIGINALE */
         .tab-bar { position: fixed; bottom: 0; width: 100%; background: white; display: flex; padding: 10px 0 30px 0; border-top: 1px solid #ddd; z-index: 2000; }
         .tab-item { flex: 1; text-align: center; color: #8e8e93; font-size: 10px; }
         .tab-item.active { color: var(--primary); }
         .tab-item svg { width: 24px; height: 24px; display: block; margin: 0 auto 4px; fill: currentColor; }
-        .add-btn { position: fixed; bottom: 100px; right: 20px; width: 60px; height: 60px; background: var(--primary); color: white; border-radius: 50%; border: none; font-size: 35px; z-index: 999; }
+
+        /* ALTRI ELEMENTI UI */
         .bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 20px 20px 0 0; z-index: 1500; transform: translateY(100%); transition: 0.3s; }
         .bottom-sheet.open { transform: translateY(-70px); }
         .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; z-index: 1400; }
         .sheet-overlay.active { display: block; }
+        .login-input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid #ddd; box-sizing: border-box; }
+        .btn-action { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; width: 100%; font-weight: bold; }
+        #welcomeScreen { position: fixed; inset: 0; background: #007AFF; z-index: 5000; display: flex; align-items: center; justify-content: center; }
         .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 25px; width: 85%; z-index: 3000; }
-        .btn-action { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; width: 100%; font-weight: bold; margin-top: 10px; }
+        .add-btn { position: fixed; bottom: 100px; right: 20px; width: 60px; height: 60px; background: var(--primary); color: white; border-radius: 50%; border: none; font-size: 35px; z-index: 999; }
     </style>
 </head>
 <body onclick="hideAllMenus()">
 
-    <div id="scannerOverlay">
-        <div class="close-scan" onclick="closeScanner()">✕</div>
-        <div id="scannerView">
-            <div class="scanner-laser"></div>
-        </div>
-        <div id="scanResult" class="scan-result-box">
-            <h2 id="resTitle">Prodotto...</h2>
-            <button class="btn-action" onclick="window.open('https://www.google.com/search?q='+document.getElementById('resTitle').innerText)">Cerca Online</button>
-            <button onclick="closeScanner()" style="width:100%; border:none; background:none; margin-top:15px; color:gray;">Chiudi</button>
-        </div>
-    </div>
-
     <div id="welcomeScreen">
-        <div class="login-card">
-            <img src="logo.png" alt="myArea">
+        <div style="background:white; padding:30px; border-radius:25px; text-align:center; width:80%;">
+            <h2 style="color:var(--primary)">myArea</h2>
             <input type="email" id="email" class="login-input" placeholder="Email">
             <input type="password" id="passInput" class="login-input" placeholder="Password">
             <button class="btn-action" onclick="handleAuth()">ACCEDI</button>
@@ -318,23 +322,35 @@
 
     <div id="mainApp">
         <div class="header">
-            <img src="logo.png" alt="myArea">
-            <div onclick="logout()" style="color:var(--danger); font-size:14px; font-weight:bold">Esci</div>
-        </div>
-
-        <div id="searchBarContainer">
-            <input type="text" class="search-input" placeholder="Cerca..." oninput="filterItems(this.value)">
+            <h3 style="margin:0; color:var(--primary)">myArea</h3>
+            <div onclick="logout()" style="color:var(--danger); font-size:12px; font-weight:bold">ESCI</div>
         </div>
 
         <div class="content">
+            <div id="scannerSection" style="display:none; margin-bottom:20px;">
+                <div id="reader"></div>
+                <p id="statusLabel" style="text-align:center; color:gray; font-size:12px;">Inquadra codice a barre</p>
+                
+                <div id="productCard" class="card-result" style="display:none;">
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        <img id="resImg" style="width:60px; height:60px; object-fit:contain;">
+                        <h4 id="resTitle" style="margin:0;">Prodotto</h4>
+                    </div>
+                    <input type="number" id="userPrice" class="login-input" placeholder="Prezzo €">
+                    <input type="text" id="userShop" class="login-input" placeholder="Negozio">
+                    <button class="btn-action" onclick="saveShopping()">SALVA ACQUISTO</button>
+                    <button onclick="restartScanner()" style="width:100%; background:none; border:none; color:var(--primary); margin-top:10px;">Riprova Scan</button>
+                </div>
+            </div>
+
             <div class="grid" id="appGrid"></div>
             <div id="workContainer" style="display:none"></div>
+            <div id="shoppingContainer" style="display:none"></div>
         </div>
 
         <button class="add-btn" onclick="openAddModal()">+</button>
 
         <div id="sheetOverlay" class="sheet-overlay" onclick="toggleSheet()"></div>
-
         <div id="bottomSheet" class="bottom-sheet">
             <div style="width:40px; height:5px; background:#ddd; border-radius:5px; margin:10px auto;"></div>
             <div style="padding: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px;">
@@ -342,8 +358,8 @@
                     <svg viewBox="0 0 24 24"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-8 0h-4V4h4v2z"/></svg>
                     <span>Lavoro</span>
                 </div>
-                <div class="tab-item" onclick="startScan()">
-                    <svg viewBox="0 0 24 24" fill="var(--success)"><path d="M4 4h7V2H4c-1.1 0-2 .9-2 2v7h2V4zm6 9l-4 4h12l-4-4-3 3-1-3zM13 2v2h7v7h2V4c0-1.1-.9-2-2-2h-7zM4 13H2v7c0 1.1.9 2 2 2h7v-2H4v-7zm16 7h-7v2h7c1.1 0 2-.9 2-2v-7h-2v7z"/></svg>
+                <div class="tab-item" onclick="openShoppingScanner()">
+                    <svg viewBox="0 0 24 24" fill="var(--success)"><path d="M4 4h7V2H4c-1.1 0-2 .9-2 2v7h2V4zm6 9l-4 4h12l-4-4-3 3-1-3zM13 2v2h7v7h2V4c0-1.1-.9-2-2-2h-7z"/></svg>
                     <span style="color:var(--success)">Scanner</span>
                 </div>
             </div>
@@ -351,7 +367,7 @@
 
         <div class="tab-bar">
             <div class="tab-item active" onclick="changeTab('tutti', this)">
-                <svg viewBox="0 0 24 24"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/></svg>
+                <svg viewBox="0 0 24 24"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4z"/></svg>
                 <span>Tutti</span>
             </div>
             <div class="tab-item" onclick="changeTab('web', this)">
@@ -375,15 +391,15 @@
 
     <div class="modal" id="addModal">
         <select id="typeSelector" onchange="toggleFields()" class="login-input">
-            <option value="link">Link / Social / Contatto</option>
-            <option value="lavoro">Lavoro (Ore / Note)</option>
+            <option value="link">Link / Contatto</option>
+            <option value="lavoro">Lavoro (Ore)</option>
         </select>
         <div id="linkFields">
             <input type="text" id="siteName" class="login-input" placeholder="Nome">
             <input type="text" id="siteUrl" class="login-input" placeholder="URL o Numero">
             <select id="siteCategory" class="login-input">
                 <option value="web">Sito Web</option>
-                <option value="social">Social Network</option>
+                <option value="social">Social</option>
                 <option value="whatsapp">WhatsApp</option>
                 <option value="contatti">Chiamata</option>
             </select>
@@ -393,19 +409,9 @@
             <input type="text" id="workNote" class="login-input" placeholder="Note">
             <input type="number" id="workHours" class="login-input" placeholder="Ore">
             <input type="date" id="workDate" class="login-input">
-            <button id="recordBtn" class="btn-action" style="background:var(--success)" onclick="toggleRecording()">🎤 REGISTRA AUDIO</button>
-            <div id="audioStatus" style="font-size:11px; text-align:center; margin-top:5px;">Nessun audio</div>
         </div>
         <button class="btn-action" onclick="saveData()">SALVA</button>
-        <button onclick="closeModal()" style="background:none; border:none; color:gray; width:100%; margin-top:15px;">Chiudi</button>
-    </div>
-
-    <div id="deleteOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:4000; align-items:center; justify-content:center;">
-        <div class="login-card">
-            <p>Eliminare questo elemento?</p>
-            <button class="btn-action" style="background:var(--danger)" id="confirmDelete">ELIMINA</button>
-            <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="background:none; border:none; color:gray; width:100%; margin-top:10px;">Annulla</button>
-        </div>
+        <button onclick="closeModal()" style="width:100%; border:none; background:none; color:gray; margin-top:10px;">Annulla</button>
     </div>
 </body>
 </html>
