@@ -5,7 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>myArea - Digital Workspace</title>
     
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <link rel="icon" type="image/png" href="icon.png?v=2">
+    <link rel="apple-touch-icon" href="icon.png?v=2">
+    <link rel="manifest" href="manifest.json?v=2">
+    
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -26,223 +31,391 @@
         const db = getFirestore(app);
 
         let currentUser = null;
-        let userData = { myLinks: [], myWork: [], myShopping: [] };
+        let userData = { myLinks: [], myWork: [] };
         let currentTab = 'tutti';
-        let html5QrCode = null;
+        let editIndex = null;
+        let pressTimer;
+        let searchTerm = "";
+        
+        let mediaRecorder;
+        let audioChunks = [];
+        let audioBase64 = null;
 
-        // Icone Standard
         const waIcon = "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg";
         const callIcon = `<svg viewBox="0 0 24 24" fill="#007AFF"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>`;
+        const trashSVG = `<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>`;
+        const editSVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
 
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                currentUser = user;
-                document.getElementById('loginScreen').style.display = 'none';
-                const docRef = doc(db, "users", user.uid);
-                const snap = await getDoc(docRef);
-                if (snap.exists()) userData = snap.data();
-                render();
-            } else {
-                document.getElementById('loginScreen').style.display = 'flex';
+        async function loadData(uid) {
+            const docRef = doc(db, "users", uid);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) userData = docSnap.data();
+            else { userData = { myLinks: [], myWork: [] }; await setDoc(docRef, userData); }
+            render();
+        }
+
+        async function syncCloud() {
+            if (!currentUser) return;
+            const docRef = doc(db, "users", currentUser.uid);
+            await setDoc(docRef, userData);
+        }
+
+        window.handleAuth = async () => {
+            const email = document.getElementById('email').value;
+            const pass = document.getElementById('passInput').value;
+            try {
+                await setPersistence(auth, browserLocalPersistence);
+                await signInWithEmailAndPassword(auth, email, pass);
+            } catch (e) { alert("Accesso fallito."); }
+        };
+
+        window.logout = () => signOut(auth);
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) { 
+                currentUser = user; 
+                document.getElementById('welcomeScreen').style.display = 'none'; 
+                document.getElementById('mainApp').style.display = 'flex'; 
+                loadData(user.uid); 
+            } else { 
+                currentUser = null; 
+                document.getElementById('welcomeScreen').style.display = 'flex'; 
+                document.getElementById('mainApp').style.display = 'none'; 
             }
         });
 
-        window.changeTab = (tab) => {
-            currentTab = tab;
-            // Stop scanner se attivo cambiando tab
-            if(html5QrCode && html5QrCode.isScanning) {
-                html5QrCode.stop().then(() => {
-                    document.getElementById('scannerWrapper').style.display = 'none';
-                });
-            }
-            toggleSheet(false);
+        window.filterItems = (val) => {
+            searchTerm = val.toLowerCase();
             render();
         };
 
         window.render = () => {
-            const grid = document.getElementById('mainGrid');
-            const workArea = document.getElementById('workArea');
-            const shopArea = document.getElementById('shopArea');
-            
-            grid.style.display = (currentTab === 'tutti' || currentTab === 'web' || currentTab === 'social' || currentTab === 'contatti') ? 'grid' : 'none';
-            workArea.style.display = (currentTab === 'lavoro') ? 'block' : 'none';
-            shopArea.style.display = (currentTab === 'shopping') ? 'block' : 'none';
+            const grid = document.getElementById('appGrid');
+            const workContainer = document.getElementById('workContainer');
+            const searchBar = document.getElementById('searchBarContainer');
+            grid.innerHTML = ''; workContainer.innerHTML = '';
 
-            grid.innerHTML = '';
-            let links = userData.myLinks || [];
-            if(currentTab !== 'tutti') links = links.filter(l => l.category === currentTab);
+            searchBar.style.display = currentTab === 'cerca' ? 'block' : 'none';
 
-            links.forEach((l, i) => {
-                const div = document.createElement('div');
-                div.className = 'app-icon';
-                let icon = l.category === 'whatsapp' ? `<img src="${waIcon}">` : l.category === 'contatti' ? callIcon : `<img src="https://www.google.com/s2/favicons?sz=128&domain=${l.url}">`;
-                div.innerHTML = `<div class="icon-box">${icon}</div><span class="app-name">${l.title}</span>`;
-                div.onclick = () => window.open(l.url, '_blank');
-                grid.appendChild(div);
-            });
-
-            // Render Shopping
-            const shopList = document.getElementById('shopList');
-            shopList.innerHTML = (userData.myShopping || []).map((s, i) => `
-                <div class="shop-item">
-                    <img src="${s.img}">
-                    <div style="flex:1"><b>${s.name}</b><br><small>${s.shop}</small></div>
-                    <div style="color:var(--success); font-weight:bold">€${s.price}</div>
-                    <div onclick="deleteShop(${i})" style="color:red; margin-left:10px">×</div>
-                </div>
-            `).join('');
-        };
-
-        window.startScan = () => {
-            document.getElementById('scannerWrapper').style.display = 'block';
-            if(!html5QrCode) html5QrCode = new Html5Qrcode("reader");
-            html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, async (code) => {
-                html5QrCode.stop();
-                document.getElementById('scannerStatus').innerText = "Cerco prodotto...";
-                const res = await fetch(`https://it.openfoodfacts.org/api/v0/product/${code}.json`);
-                const data = await res.json();
-                if(data.status === 1) {
-                    window.tempProd = { name: data.product.product_name, img: data.product.image_url || '' };
-                    document.getElementById('prodResult').style.display = 'block';
-                    document.getElementById('resTitle').innerText = window.tempProd.name;
+            if(currentTab === 'lavoro') {
+                grid.style.display = 'none'; workContainer.style.display = 'block';
+                userData.myWork.forEach((w, i) => {
+                    const div = document.createElement('div');
+                    div.className = 'work-card';
+                    div.innerHTML = `
+                        <div class="work-info" onclick="editWork(${i})">
+                            <h4>${w.client}</h4>
+                            <p>${w.note}</p>
+                            ${w.audio ? `<audio controls src="${w.audio}" class="custom-audio-player"></audio>` : ''}
+                            <div class="work-meta">${w.date || '---'} • ${w.hours}h</div>
+                        </div>
+                        <div class="trash-btn" onclick="askDelete(${i}, 'work')">${trashSVG}</div>
+                    `;
+                    workContainer.appendChild(div);
+                });
+            } else {
+                grid.style.display = 'grid'; workContainer.style.display = 'none';
+                let filtered = userData.myLinks;
+                if (currentTab === 'contatti') {
+                    filtered = userData.myLinks.filter(l => l.category === 'contatti' || l.category === 'whatsapp');
+                } else if (currentTab !== 'tutti' && currentTab !== 'cerca') {
+                    filtered = userData.myLinks.filter(l => l.category === currentTab);
                 }
-            });
+                
+                if (searchTerm !== "") {
+                    filtered = filtered.filter(l => l.title.toLowerCase().includes(searchTerm));
+                }
+                
+                filtered.forEach((l) => {
+                    const idx = userData.myLinks.indexOf(l);
+                    const div = document.createElement('div');
+                    div.className = 'app-icon';
+                    let icon = l.category === 'whatsapp' ? `<img src="${waIcon}">` : l.category === 'contatti' ? callIcon : `<img src="https://www.google.com/s2/favicons?sz=128&domain=${l.url}">`;
+                    div.innerHTML = `<div class="context-menu" id="menu-${idx}"><div class="context-item" onclick="event.stopPropagation(); editLink(${idx})">${editSVG} Modifica</div><div class="context-item" style="color:var(--danger)" onclick="event.stopPropagation(); askDelete(${idx}, 'link')">${trashSVG} Elimina</div></div><div class="icon-box">${icon}</div><span class="app-name">${l.title}</span>`;
+                    div.onclick = () => { if(document.getElementById(`menu-${idx}`).style.display === 'flex') { hideAllMenus(); return; } if (l.url.startsWith('tel:')) window.location.href = l.url; else window.open(l.url, '_blank'); };
+                    div.onmousedown = div.ontouchstart = () => { pressTimer = setTimeout(() => { hideAllMenus(); document.getElementById(`menu-${idx}`).style.display = 'flex'; }, 700); };
+                    div.onmouseup = div.ontouchend = () => clearTimeout(pressTimer);
+                    grid.appendChild(div);
+                });
+            }
         };
 
-        window.saveScan = async () => {
-            const p = document.getElementById('pPrice').value;
-            const s = document.getElementById('pShop').value;
-            if(!p || !s) return alert("Inserisci dati");
-            userData.myShopping.unshift({...window.tempProd, price: p, shop: s, date: new Date().toLocaleDateString()});
-            await setDoc(doc(db, "users", currentUser.uid), userData);
-            document.getElementById('scannerWrapper').style.display = 'none';
-            render();
+        window.toggleSheet = () => {
+            document.getElementById('bottomSheet').classList.toggle('open');
+            document.getElementById('sheetOverlay').classList.toggle('active');
         };
 
-        window.toggleSheet = (show) => {
-            const s = document.getElementById('sheet');
-            s.style.transform = show ? 'translateY(0)' : 'translateY(100%)';
+        window.changeTab = (tab, el) => { 
+            currentTab = tab; 
+            document.querySelectorAll('.tab-item').forEach(i => i.classList.remove('active')); 
+            if(el) el.classList.add('active'); 
+            if(tab !== 'altro') {
+                document.getElementById('bottomSheet').classList.remove('open');
+                document.getElementById('sheetOverlay').classList.remove('active');
+            }
+            render(); 
         };
 
-        window.handleLogin = () => {
-            const e = document.getElementById('email').value;
-            const p = document.getElementById('pass').value;
-            signInWithEmailAndPassword(auth, e, p);
+        window.importFromPhone = async () => {
+            try {
+                const props = ['name', 'tel'];
+                const opts = { multiple: false };
+                const contacts = await navigator.contacts.select(props, opts);
+                if (contacts.length > 0) {
+                    const c = contacts[0];
+                    document.getElementById('siteName').value = c.name ? c.name[0] : '';
+                    document.getElementById('siteUrl').value = c.tel ? c.tel[0].replace(/\s+/g, '') : '';
+                    document.getElementById('siteCategory').value = 'contatti';
+                }
+            } catch (err) { alert("Funzione disponibile solo su smartphone via HTTPS"); }
         };
+
+        window.toggleRecording = async () => {
+            const btn = document.getElementById('recordBtn');
+            const status = document.getElementById('audioStatus');
+            if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+                    mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const reader = new FileReader();
+                        reader.readAsDataURL(audioBlob);
+                        reader.onloadend = () => {
+                            audioBase64 = reader.result;
+                            status.innerText = "✅ Audio pronto";
+                            status.style.color = "var(--success)";
+                        };
+                    };
+                    mediaRecorder.start();
+                    btn.innerText = "🛑 FERMA";
+                    btn.style.background = "var(--danger)";
+                } catch (err) { alert("Attiva il microfono."); }
+            } else {
+                mediaRecorder.stop();
+                btn.innerText = "🎤 REGISTRA";
+                btn.style.background = "var(--primary)";
+            }
+        };
+
+        window.saveData = async () => {
+            const type = document.getElementById('typeSelector').value;
+            if(type === 'link') {
+                const name = document.getElementById('siteName').value; let url = document.getElementById('siteUrl').value; const cat = document.getElementById('siteCategory').value;
+                if(name && url) {
+                    if(cat === 'whatsapp' && !url.startsWith('http')) url = 'https://wa.me/' + url.replace(/\D/g,'');
+                    if(cat === 'contatti' && !url.startsWith('tel:')) url = 'tel:' + url.replace(/\s/g, '');
+                    const item = { title: name, url: url, category: cat };
+                    if(editIndex !== null) userData.myLinks[editIndex] = item; else userData.myLinks.push(item);
+                }
+            } else {
+                const work = { 
+                    client: document.getElementById('workClient').value, 
+                    note: document.getElementById('workNote').value, 
+                    hours: document.getElementById('workHours').value, 
+                    date: document.getElementById('workDate').value,
+                    audio: audioBase64
+                };
+                if(work.client) { if(editIndex !== null) userData.myWork[editIndex] = work; else userData.myWork.unshift(work); }
+            }
+            audioBase64 = null;
+            closeModal(); render(); await syncCloud();
+        };
+
+        window.askDelete = (index, type) => {
+            event.stopPropagation(); hideAllMenus();
+            document.getElementById('deleteOverlay').style.display = 'flex';
+            document.getElementById('confirmDelete').onclick = async () => {
+                if(type === 'work') userData.myWork.splice(index, 1); else userData.myLinks.splice(index, 1);
+                document.getElementById('deleteOverlay').style.display = 'none';
+                render(); await syncCloud();
+            };
+        };
+
+        window.hideAllMenus = () => document.querySelectorAll('.context-menu').forEach(m => m.style.display = 'none');
+        
+        window.openAddModal = () => { 
+            editIndex = null; 
+            audioBase64 = null; 
+            document.getElementById('siteName').value = '';
+            document.getElementById('siteUrl').value = '';
+            document.getElementById('siteCategory').value = 'web';
+            document.getElementById('workClient').value = '';
+            document.getElementById('workNote').value = '';
+            document.getElementById('workHours').value = '';
+            document.getElementById('workDate').value = '';
+            document.getElementById('addModal').style.display = 'block'; 
+            document.getElementById('audioStatus').innerText = "Nessun audio";
+            document.getElementById('audioStatus').style.color = "gray";
+        };
+
+        window.closeModal = () => document.getElementById('addModal').style.display = 'none';
+        window.toggleFields = () => { 
+            const isLink = document.getElementById('typeSelector').value === 'link'; 
+            document.getElementById('linkFields').style.display = isLink ? 'block' : 'none'; 
+            document.getElementById('workFields').style.display = isLink ? 'none' : 'block'; 
+        };
+        window.editLink = (index) => { hideAllMenus(); editIndex = index; const l = userData.myLinks[index]; document.getElementById('typeSelector').value = 'link'; toggleFields(); document.getElementById('siteName').value = l.title; document.getElementById('siteUrl').value = l.url; document.getElementById('siteCategory').value = l.category; document.getElementById('addModal').style.display = 'block'; };
+        window.editWork = (index) => { editIndex = index; const w = userData.myWork[index]; document.getElementById('typeSelector').value = 'lavoro'; toggleFields(); document.getElementById('workClient').value = w.client; document.getElementById('workNote').value = w.note; document.getElementById('workHours').value = w.hours; document.getElementById('workDate').value = w.date; audioBase64 = w.audio || null; document.getElementById('addModal').style.display = 'block'; if(audioBase64) { document.getElementById('audioStatus').innerText = "✅ Audio presente"; document.getElementById('audioStatus').style.color = "var(--success)"; } };
     </script>
 
     <style>
-        :root { --primary: #007AFF; --bg: #f2f2f7; --success: #34C759; }
-        body { margin: 0; font-family: -apple-system, sans-serif; background: var(--bg); overflow: hidden; }
+        :root { --primary: #007AFF; --bg: #f2f2f7; --work: #FF9500; --danger: #FF3B30; --success: #34C759; }
+        body, html { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: var(--bg); height: 100%; overflow: hidden; }
+        #welcomeScreen { position: fixed; inset: 0; background: #007AFF; display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .login-card { background: white; padding: 40px 30px; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; }
+        .login-card img { width: 120px; margin-bottom: 20px; }
+        .login-input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid #ddd; font-size: 16px; box-sizing: border-box; }
         
-        .nav-top { background: white; padding: 15px; display: flex; justify-content: space-between; border-bottom: 1px solid #ddd; }
-        .main-content { height: calc(100vh - 140px); overflow-y: auto; padding: 15px; }
+        /* Ripristino stile data calendario */
+        input[type="date"]:before { content: attr(placeholder); color: #aaa; margin-right: 0.5em; }
+        input[type="date"]:focus:before, input[type="date"]:valid:before { content: ""; }
 
-        /* GRIGLIA ICONE - RIPRISTINATA */
-        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px 10px; }
-        .app-icon { display: flex; flex-direction: column; align-items: center; }
-        .icon-box { width: 60px; height: 60px; background: white; border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.08); overflow: hidden; }
-        .icon-box img { width: 100%; height: 100%; object-fit: cover; }
-        .icon-box svg { width: 32px; height: 32px; }
-        .app-name { font-size: 11px; margin-top: 5px; color: #333; text-align: center; width: 70px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        #mainApp { display: none; height: 100%; flex-direction: column; }
+        .header { background: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; }
+        .header img { height: 35px; }
 
-        /* SHOPPING LIST */
-        .shop-item { background: white; padding: 10px; border-radius: 12px; display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-        .shop-item img { width: 40px; height: 40px; object-fit: contain; }
+        #searchBarContainer { padding: 10px 15px; background: white; border-bottom: 1px solid #eee; display: none; }
+        .search-input { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid #ddd; background: #f2f2f7; font-size: 16px; box-sizing: border-box; }
 
-        /* BARRA NAVIGAZIONE */
-        .tab-bar { position: fixed; bottom: 0; width: 100%; background: white; display: flex; padding: 10px 0 25px; border-top: 1px solid #ddd; }
-        .tab { flex: 1; text-align: center; font-size: 10px; color: #8e8e93; }
-        .tab svg { width: 24px; height: 24px; display: block; margin: 0 auto 2px; }
+        .content { flex: 1; overflow-y: auto; padding: 15px 15px 140px 15px; }
+        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+        .app-icon { display: flex; flex-direction: column; align-items: center; position: relative; }
+        .icon-box { width: 60px; height: 60px; border-radius: 15px; background: white; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        .icon-box img, .icon-box svg { width: 35px; height: 35px; }
+        .app-name { font-size: 11px; margin-top: 6px; color: #333; text-align: center; font-weight: 500; }
+        
+        .work-card { background: white; padding: 15px; border-radius: 18px; margin-bottom: 10px; border-left: 5px solid var(--work); display: flex; justify-content: space-between; align-items: center; }
+        .work-info { flex: 1; }
+        .work-info h4 { margin: 0; color: #333; }
+        .work-info p { margin: 5px 0; font-size: 13px; color: #666; }
+        .work-meta { font-size: 11px; color: #999; font-weight: bold; }
+        .custom-audio-player { width: 100%; height: 35px; margin-top: 8px; border-radius: 5px; background: #f1f3f4; }
 
-        /* SCANNER OVERLAY */
-        #scannerWrapper { position: absolute; top:0; left:0; width:100%; background:white; z-index: 100; display:none; padding: 20px; box-sizing: border-box; }
-        #reader { width: 100%; border-radius: 15px; overflow: hidden; }
+        .tab-bar { position: fixed; bottom: 0; width: 100%; background: rgba(255,255,255,0.95); backdrop-filter: blur(15px); display: flex; padding: 10px 0 30px 0; border-top: 1px solid #ddd; justify-content: space-around; z-index: 2000; }
+        .tab-item { display: flex; flex-direction: column; align-items: center; color: #8e8e93; font-size: 10px; flex: 1; cursor: pointer; }
+        .tab-item.active { color: var(--primary); }
+        .tab-item svg { width: 24px; height: 24px; fill: currentColor; margin-bottom: 4px; }
+        
+        .bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); z-index: 1500; transform: translateY(100%); transition: transform 0.3s ease-out; }
+        .bottom-sheet.open { transform: translateY(-70px); }
+        .sheet-handle { width: 40px; height: 5px; background: #ddd; border-radius: 5px; margin: 12px auto; }
+        .sheet-content { padding: 10px 20px 40px 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+        .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; z-index: 1400; }
+        .sheet-overlay.active { display: block; }
 
-        /* MODALI & SHEET */
-        .sheet { position: fixed; bottom: 0; width: 100%; background: white; transition: 0.3s; transform: translateY(100%); z-index: 1000; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); }
-        .login-screen { position: fixed; inset: 0; background: var(--primary); z-index: 2000; display: flex; align-items: center; justify-content: center; flex-direction: column; color: white; }
-        input { width: 100%; padding: 12px; margin: 5px 0; border-radius: 10px; border: 1px solid #ddd; box-sizing: border-box; }
+        .add-btn { position: fixed; bottom: 100px; right: 20px; width: 60px; height: 60px; background: var(--primary); color: white; border-radius: 50%; border: none; font-size: 35px; box-shadow: 0 5px 15px rgba(0,122,255,0.3); z-index: 999; }
+        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 25px; width: 85%; max-width: 320px; z-index: 3000; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        .btn-action { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; font-weight: bold; width: 100%; margin-top: 10px; }
+        .context-menu { position: absolute; top: -10px; background: white; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); display: none; z-index: 500; flex-direction: column; padding: 5px; }
+        #deleteOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 4000; align-items: center; justify-content: center; }
+        .trash-btn svg { width: 20px; fill: var(--danger); }
     </style>
 </head>
-<body>
+<body onclick="hideAllMenus()">
 
-    <div id="loginScreen" class="login-screen">
-        <h2>myArea</h2>
-        <div style="width: 80%;">
-            <input type="email" id="email" placeholder="Email">
-            <input type="password" id="pass" placeholder="Password">
-            <button onclick="handleLogin()" style="width:100%; padding:15px; border-radius:10px; border:none; background:white; color:var(--primary); font-weight:bold; margin-top:10px;">ACCEDI</button>
+    <div id="welcomeScreen">
+        <div class="login-card">
+            <img src="logo.png" alt="myArea">
+            <input type="email" id="email" class="login-input" placeholder="Email">
+            <input type="password" id="passInput" class="login-input" placeholder="Password">
+            <button class="btn-action" onclick="handleAuth()">ACCEDI</button>
         </div>
     </div>
 
-    <div class="nav-top">
-        <b style="color:var(--primary)">myArea</b>
-        <span onclick="location.reload()" style="font-size: 12px; color: #8e8e93;">Aggiorna</span>
-    </div>
+    <div id="mainApp">
+        <div class="header">
+            <img src="logo.png" alt="myArea">
+            <div onclick="logout()" style="color:var(--danger); font-size:14px; font-weight:bold">Esci</div>
+        </div>
 
-    <div class="main-content">
-        <div id="mainGrid" class="grid"></div>
+        <div id="searchBarContainer">
+            <input type="text" class="search-input" placeholder="Cerca tra i tuoi link..." oninput="filterItems(this.value)">
+        </div>
 
-        <div id="workArea" style="display:none">
-            <h3>Registro Ore</h3>
-            </div>
+        <div class="content">
+            <div class="grid" id="appGrid"></div>
+            <div id="workContainer" style="display:none"></div>
+        </div>
 
-        <div id="shopArea" style="display:none">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h3>Shopping Lab</h3>
-                <button onclick="startScan()" style="background:var(--success); color:white; border:none; padding:8px 15px; border-radius:8px; font-weight:bold">+ SCAN</button>
-            </div>
+        <button class="add-btn" onclick="openAddModal()">+</button>
 
-            <div id="scannerWrapper">
-                <div id="reader"></div>
-                <p id="scannerStatus" style="text-align:center">Inquadra il codice</p>
-                <div id="prodResult" style="display:none; border:1px solid #ddd; padding:15px; border-radius:12px;">
-                    <b id="resTitle"></b>
-                    <input type="number" id="pPrice" placeholder="Prezzo €">
-                    <input type="text" id="pShop" placeholder="Negozio">
-                    <button onclick="saveScan()" style="width:100%; background:var(--primary); color:white; border:none; padding:12px; border-radius:10px; margin-top:10px;">SALVA</button>
+        <div id="sheetOverlay" class="sheet-overlay" onclick="toggleSheet()"></div>
+
+        <div id="bottomSheet" class="bottom-sheet">
+            <div class="sheet-handle"></div>
+            <div class="sheet-content">
+                <div class="tab-item" onclick="changeTab('lavoro', this)">
+                    <svg viewBox="0 0 24 24"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-8 0h-4V4h4v2z"/></svg>
+                    <span class="app-name">Lavoro</span>
                 </div>
-                <button onclick="changeTab('shopping')" style="width:100%; background:none; border:none; color:red; margin-top:15px;">Annulla</button>
             </div>
+        </div>
 
-            <div id="shopList" style="margin-top:20px"></div>
+        <div class="tab-bar">
+            <div class="tab-item active" onclick="changeTab('tutti', this)">
+                <svg viewBox="0 0 24 24"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/></svg>
+                <span>Tutti</span>
+            </div>
+            <div class="tab-item" onclick="changeTab('web', this)">
+                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                <span>Web</span>
+            </div>
+            <div class="tab-item" onclick="changeTab('social', this)">
+                <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+                <span>Social</span>
+            </div>
+            <div class="tab-item" onclick="changeTab('contatti', this)">
+                <svg viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                <span>Contatti</span>
+            </div>
+            <div class="tab-item" onclick="changeTab('cerca', this)">
+                <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                <span>Cerca</span>
+            </div>
+            <div class="tab-item" onclick="toggleSheet()">
+                <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+                <span>Altro</span>
+            </div>
         </div>
     </div>
 
-    <div id="sheet" class="sheet">
-        <div style="width:40px; height:4px; background:#ddd; margin:0 auto 15px; border-radius:10px;"></div>
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
-            <div class="app-icon" onclick="changeTab('lavoro')">
-                <div class="icon-box" style="background:#FF9500; color:white;">💼</div>
-                <span>Lavoro</span>
-            </div>
-            <div class="app-icon" onclick="changeTab('shopping')">
-                <div class="icon-box" style="background:#34C759; color:white;">🛒</div>
-                <span>Shopping</span>
-            </div>
+    <div class="modal" id="addModal">
+        <select id="typeSelector" onchange="toggleFields()" class="login-input">
+            <option value="link">Link / Social / Contatto</option>
+            <option value="lavoro">Lavoro (Ore / Note)</option>
+        </select>
+        <div id="linkFields">
+            <button class="btn-action" style="background:#5856D6; font-size:12px;" onclick="importFromPhone()">👤 IMPORTA RUBRICA</button>
+            <input type="text" id="siteName" class="login-input" placeholder="Nome">
+            <input type="text" id="siteUrl" class="login-input" placeholder="URL o Numero">
+            <select id="siteCategory" class="login-input">
+                <option value="web">Sito Web</option>
+                <option value="social">Social Network</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="contatti">Chiamata</option>
+            </select>
         </div>
-        <button onclick="toggleSheet(false)" style="width:100%; margin-top:20px; padding:10px; border:none; background:#f2f2f7; border-radius:10px;">Chiudi</button>
+        <div id="workFields" style="display:none">
+            <input type="text" id="workClient" class="login-input" placeholder="Cliente">
+            <input type="text" id="workNote" class="login-input" placeholder="Note">
+            <input type="number" id="workHours" class="login-input" placeholder="Ore">
+            <input type="date" id="workDate" class="login-input" placeholder="Data Calendario" required>
+            <button id="recordBtn" class="btn-action" style="background:var(--success)" onclick="toggleRecording()">🎤 REGISTRA AUDIO</button>
+            <div id="audioStatus" style="font-size:11px; text-align:center; margin-top:5px;">Nessun audio</div>
+        </div>
+        <button class="btn-action" onclick="saveData()">SALVA</button>
+        <button onclick="closeModal()" style="background:none; border:none; color:gray; width:100%; margin-top:15px;">Chiudi</button>
     </div>
 
-    <div class="tab-bar">
-        <div class="tab" onclick="changeTab('tutti')">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-            Home
-        </div>
-        <div class="tab" onclick="changeTab('web')">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
-            Web
-        </div>
-        <div class="tab" onclick="changeTab('social')">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5s-3 1.34-3 3 1.34 3 3 3z"/></svg>
-            Social
-        </div>
-        <div class="tab" onclick="toggleSheet(true)">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
-            Altro
+    <div id="deleteOverlay">
+        <div class="login-card" style="padding:30px;">
+            <p>Eliminare questo elemento?</p>
+            <button class="btn-action" style="background:var(--danger)" id="confirmDelete">ELIMINA</button>
+            <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="background:none; border:none; color:gray; width:100%; margin-top:10px;">Annulla</button>
         </div>
     </div>
-
 </body>
 </html>
