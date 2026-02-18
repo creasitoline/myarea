@@ -36,7 +36,6 @@
         let editIndex = null;
         let pressTimer;
         let searchTerm = "";
-        
         let mediaRecorder;
         let audioChunks = [];
         let audioBase64 = null;
@@ -84,10 +83,12 @@
             }
         });
 
-        // --- GESTIONE SCANNER ---
+        // --- GESTIONE SCANNER (MODIFICATA) ---
         window.openScanner = () => {
-            document.getElementById('scannerFrame').style.display = 'block';
-            toggleSheet();
+            const frame = document.getElementById('scannerFrame');
+            frame.src = "scanner.html"; // Ricarica per resettare camera
+            frame.style.display = 'block';
+            toggleSheet(); // Chiude il menu Altro
         };
 
         window.addEventListener('message', (event) => {
@@ -111,13 +112,14 @@
                     changeTab('spesa');
                 }
             }
-            if (event.data.type === 'qr-close') document.getElementById('scannerFrame').style.display = 'none';
+            if (event.data.type === 'qr-close') {
+                document.getElementById('scannerFrame').style.display = 'none';
+                document.getElementById('scannerFrame').src = ""; // Stop camera
+            }
         });
 
-        window.filterItems = (val) => {
-            searchTerm = val.toLowerCase();
-            render();
-        };
+        // --- RESTO DELLE FUNZIONI (RENDER, TABS, ETC) ---
+        window.filterItems = (val) => { searchTerm = val.toLowerCase(); render(); };
 
         window.render = () => {
             const grid = document.getElementById('appGrid');
@@ -165,11 +167,8 @@
             } else {
                 grid.style.display = 'grid'; workContainer.style.display = 'none'; shoppingContainer.style.display = 'none';
                 let filtered = userData.myLinks;
-                if (currentTab === 'contatti') {
-                    filtered = userData.myLinks.filter(l => l.category === 'contatti' || l.category === 'whatsapp');
-                } else if (currentTab !== 'tutti' && currentTab !== 'cerca') {
-                    filtered = userData.myLinks.filter(l => l.category === currentTab);
-                }
+                if (currentTab === 'contatti') filtered = userData.myLinks.filter(l => l.category === 'contatti' || l.category === 'whatsapp');
+                else if (currentTab !== 'tutti' && currentTab !== 'cerca') filtered = userData.myLinks.filter(l => l.category === currentTab);
                 if (searchTerm !== "") filtered = filtered.filter(l => l.title.toLowerCase().includes(searchTerm));
                 
                 filtered.forEach((l) => {
@@ -186,32 +185,20 @@
             }
         };
 
-        window.updateShopping = (idx, field, val) => {
-            userData.myShopping[idx][field] = val;
-            syncCloud();
-        };
-
-        window.toggleSheet = () => {
-            document.getElementById('bottomSheet').classList.toggle('open');
-            document.getElementById('sheetOverlay').classList.toggle('active');
-        };
-
+        window.updateShopping = (idx, field, val) => { userData.myShopping[idx][field] = val; syncCloud(); };
+        window.toggleSheet = () => { document.getElementById('bottomSheet').classList.toggle('open'); document.getElementById('sheetOverlay').classList.toggle('active'); };
         window.changeTab = (tab, el) => { 
             currentTab = tab; 
             document.querySelectorAll('.tab-item').forEach(i => i.classList.remove('active')); 
             if(el) el.classList.add('active'); 
-            if(tab !== 'altro') {
-                document.getElementById('bottomSheet').classList.remove('open');
-                document.getElementById('sheetOverlay').classList.remove('active');
-            }
+            if(tab !== 'altro') { document.getElementById('bottomSheet').classList.remove('open'); document.getElementById('sheetOverlay').classList.remove('active'); }
             render(); 
         };
 
         window.importFromPhone = async () => {
             try {
                 const props = ['name', 'tel'];
-                const opts = { multiple: false };
-                const contacts = await navigator.contacts.select(props, opts);
+                const contacts = await navigator.contacts.select(props, { multiple: false });
                 if (contacts.length > 0) {
                     const c = contacts[0];
                     document.getElementById('siteName').value = c.name ? c.name[0] : '';
@@ -288,22 +275,11 @@
         };
 
         window.hideAllMenus = () => document.querySelectorAll('.context-menu').forEach(m => m.style.display = 'none');
-        
         window.openAddModal = () => { 
-            editIndex = null; 
-            audioBase64 = null; 
-            document.getElementById('siteName').value = '';
-            document.getElementById('siteUrl').value = '';
-            document.getElementById('siteCategory').value = 'web';
-            document.getElementById('workClient').value = '';
-            document.getElementById('workNote').value = '';
-            document.getElementById('workHours').value = '';
-            document.getElementById('workDate').value = '';
+            editIndex = null; audioBase64 = null; 
+            document.querySelectorAll('#addModal input').forEach(i => i.value = '');
             document.getElementById('addModal').style.display = 'block'; 
-            document.getElementById('audioStatus').innerText = "Nessun audio";
-            document.getElementById('audioStatus').style.color = "gray";
         };
-
         window.closeModal = () => document.getElementById('addModal').style.display = 'none';
         window.toggleFields = () => { 
             const isLink = document.getElementById('typeSelector').value === 'link'; 
@@ -311,12 +287,13 @@
             document.getElementById('workFields').style.display = isLink ? 'none' : 'block'; 
         };
         window.editLink = (index) => { hideAllMenus(); editIndex = index; const l = userData.myLinks[index]; document.getElementById('typeSelector').value = 'link'; toggleFields(); document.getElementById('siteName').value = l.title; document.getElementById('siteUrl').value = l.url; document.getElementById('siteCategory').value = l.category; document.getElementById('addModal').style.display = 'block'; };
-        window.editWork = (index) => { editIndex = index; const w = userData.myWork[index]; document.getElementById('typeSelector').value = 'lavoro'; toggleFields(); document.getElementById('workClient').value = w.client; document.getElementById('workNote').value = w.note; document.getElementById('workHours').value = w.hours; document.getElementById('workDate').value = w.date; audioBase64 = w.audio || null; document.getElementById('addModal').style.display = 'block'; if(audioBase64) { document.getElementById('audioStatus').innerText = "✅ Audio presente"; document.getElementById('audioStatus').style.color = "var(--success)"; } };
+        window.editWork = (index) => { editIndex = index; const w = userData.myWork[index]; document.getElementById('typeSelector').value = 'lavoro'; toggleFields(); document.getElementById('workClient').value = w.client; document.getElementById('workNote').value = w.note; document.getElementById('workHours').value = w.hours; document.getElementById('workDate').value = w.date; audioBase64 = w.audio || null; document.getElementById('addModal').style.display = 'block'; };
     </script>
 
     <style>
         :root { --primary: #007AFF; --bg: #f2f2f7; --work: #FF9500; --danger: #FF3B30; --success: #34C759; }
         body, html { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background: var(--bg); height: 100%; overflow: hidden; }
+        
         #welcomeScreen { position: fixed; inset: 0; background: #007AFF; display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .login-card { background: white; padding: 40px 30px; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; }
         .login-card img { width: 120px; margin-bottom: 20px; }
@@ -348,11 +325,11 @@
         .tab-item.active { color: var(--primary); }
         .tab-item svg { width: 24px; height: 24px; fill: currentColor; margin-bottom: 4px; }
         
-        .bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); z-index: 1500; transform: translateY(100%); transition: transform 0.3s ease-out; }
+        .bottom-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 20px 20px 0 0; box-shadow: 0 -5px 20px rgba(0,0,0,0.1); z-index: 2500; transform: translateY(100%); transition: transform 0.3s ease-out; }
         .bottom-sheet.open { transform: translateY(-70px); }
         .sheet-handle { width: 40px; height: 5px; background: #ddd; border-radius: 5px; margin: 12px auto; }
         .sheet-content { padding: 10px 20px 40px 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; max-height: 40vh; overflow-y: auto; }
-        .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; z-index: 1400; }
+        .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; z-index: 2400; }
         .sheet-overlay.active { display: block; }
 
         .add-btn { position: fixed; bottom: 100px; right: 20px; width: 60px; height: 60px; background: var(--primary); color: white; border-radius: 50%; border: none; font-size: 35px; box-shadow: 0 5px 15px rgba(0,122,255,0.3); z-index: 999; }
@@ -362,12 +339,22 @@
         #deleteOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 4000; align-items: center; justify-content: center; }
         .trash-btn svg { width: 20px; fill: var(--danger); }
         
-        #scannerFrame { display: none; position: fixed; inset: 0; width: 100%; height: 100%; border: none; z-index: 5000; }
+        /* SCANNER FULLSCREEN */
+        #scannerFrame { 
+            display: none; 
+            position: fixed; 
+            inset: 0; 
+            width: 100%; 
+            height: 100%; 
+            border: none; 
+            z-index: 9999; 
+            background: black; 
+        }
     </style>
 </head>
 <body onclick="hideAllMenus()">
 
-    <iframe id="scannerFrame" src="scanner.html"></iframe>
+    <iframe id="scannerFrame" src="" allow="camera; microphone"></iframe>
 
     <div id="welcomeScreen">
         <div class="login-card">
